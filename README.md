@@ -1,2 +1,2 @@
 # SignOps
-Streamline operations for your signage business, by managing quotes in a smooth workflow
+Streamline operations for your signage business, by managing quotes and jobs in a smooth workflow
