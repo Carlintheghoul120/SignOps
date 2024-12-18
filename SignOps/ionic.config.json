@@ -1,7 +1,0 @@
-{
-  "name": "SignOps",
-  "integrations": {
-    "capacitor": {}
-  },
-  "type": "react-vite"
-}
