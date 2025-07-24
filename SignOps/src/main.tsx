@@ -9,7 +9,6 @@ import '@ionic/react/css/structure.css';
 import '@ionic/react/css/typography.css';
 import './theme/variables.css';
 
-// Required for Ionic PWA elements (e.g. camera, modals)
 defineCustomElements(window);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
