@@ -6,7 +6,6 @@ import {
   IonGrid, IonRow, IonCol
 } from '@ionic/react';
 import { supabase } from '../../supbaseclient';
-
 interface SignageType {
   signage_id: number;
   name: string;

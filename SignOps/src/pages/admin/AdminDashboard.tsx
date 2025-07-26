@@ -5,19 +5,50 @@ import {
   IonToolbar,
   IonTitle,
   IonContent,
-  IonCard,
-  IonCardHeader,
-  IonCardTitle,
-  IonCardContent,
   IonGrid,
   IonRow,
   IonCol,
-  IonButton
+  IonCard,
+  IonCardContent,
+  IonIcon,
+  IonLabel,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 
+import {
+  constructOutline,
+  peopleOutline,
+  layersOutline,
+  cubeOutline,
+} from 'ionicons/icons';
+
+import './AdminDashboard.css';
+
 const AdminDashboard: React.FC = () => {
   const history = useHistory();
+
+  const tiles = [
+    {
+      title: 'Signage',
+      icon: constructOutline,
+      route: '/admin/signage',
+    },
+    {
+      title: 'Users',
+      icon: peopleOutline,
+      route: '/admin/users',
+    },
+    {
+      title: 'Add-ons',
+      icon: layersOutline,
+      route: '/admin/addons',
+    },
+    {
+      title: 'Materials',
+      icon: cubeOutline,
+      route: '/admin/materials',
+    },
+  ];
 
   return (
     <IonPage>
@@ -28,31 +59,21 @@ const AdminDashboard: React.FC = () => {
       </IonHeader>
 
       <IonContent className="ion-padding">
-        <IonGrid fixed className="ion-justify-content-center ion-align-items-center" style={{ height: '100%' }}>
-          <IonRow className="ion-justify-content-center">
-            <IonCol size="12" sizeMd="8" sizeLg="6">
-              <IonCard className="ion-padding">
-                <IonCardHeader>
-                  <IonCardTitle className="ion-text-center">Admin Tools</IonCardTitle>
-                </IonCardHeader>
-
-                <IonCardContent className="ion-text-center">
-                  <IonButton expand="block" color="primary" className="ion-margin-bottom" onClick={() => history.push('/admin/signage')}>
-                    Manage Signage
-                  </IonButton>
-
-                  <IonButton expand="block" color="secondary" className="ion-margin-bottom" onClick={() => history.push('/admin/users')}>
-                    Manage Users
-                  </IonButton>
-				  <IonButton expand="block" color="tertiary" className="ion-margin-bottom" onClick={() => history.push('/admin/addons')}>
-					Manage Add-ons
-				  </IonButton>
-				  <IonButton expand="block" color="success" className="ion-margin-bottom" onClick={() => history.push('/admin/materials')}>
-					Manage Materials
-				  </IonButton>
-                </IonCardContent>
-              </IonCard>
-            </IonCol>
+        <IonGrid>
+          <IonRow>
+            {tiles.map((tile, index) => (
+              <IonCol key={index} size="6" sizeMd="3">
+                <IonCard
+                  className="admin-tile"
+                  onClick={() => history.push(tile.route)}
+                >
+                  <IonCardContent className="admin-tile-content">
+                    <IonIcon icon={tile.icon} className="admin-tile-icon" />
+                    <IonLabel className="admin-tile-label">{tile.title}</IonLabel>
+                  </IonCardContent>
+                </IonCard>
+              </IonCol>
+            ))}
           </IonRow>
         </IonGrid>
       </IonContent>

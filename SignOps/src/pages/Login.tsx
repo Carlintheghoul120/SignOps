@@ -1,190 +1,255 @@
-import { IonButton, IonButtons, IonCard, IonCardContent, IonContent, IonHeader, IonImg, IonInput, IonMenuButton, IonPage, IonSpinner, IonText, IonTitle, IonToast, IonToolbar } from '@ionic/react';
-import ExploreContainer from '../components/ExploreContainer';
-import './Login.css';
-import { useHistory } from 'react-router-dom';
-import { supabase } from '../supbaseclient';
-import { useAuth } from '../AuthContext';
+import {
+	IonButton,
+	IonButtons,
+	IonCard,
+	IonCardContent,
+	IonContent,
+	IonHeader,
+	IonImg,
+	IonInput,
+	IonMenuButton,
+	IonPage,
+	IonSpinner,
+	IonText,
+	IonTitle,
+	IonToast,
+	IonToolbar
+} from '@ionic/react';
+import {useHistory} from 'react-router-dom';
+import {supabase} from '../supbaseclient';
+import {useAuth} from '../AuthContext';
 import {useState,useEffect} from 'react';
 
+const Login: React.FC=() => {
+	const history=useHistory();
+	const {user}=useAuth();
 
-const Login: React.FC = () => {
-	const history = useHistory();
-  const { user } = useAuth();
+	const [email,setEmail]=useState('');
+	const [phone,setPhone]=useState('');
+	const [password,setPassword]=useState('');
+	const [isLogin,setIsLogin]=useState(true);
+	const [usePhone,setUsePhone]=useState(false);
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-  const [toastMessage, setToastMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [showResend, setShowResend] = useState(false);
-  const [loadingResend, setLoadingResend] = useState(false);
+	const [toastMessage,setToastMessage]=useState('');
+	const [errorMessage,setErrorMessage]=useState('');
+	const [showResend,setShowResend]=useState(false);
+	const [loadingResend,setLoadingResend]=useState(false);
 
-  useEffect(() => {
-    if (user) {
-      history.replace('/quote/new');
-    }
-  }, [user, history]);
+	useEffect(() => {
+		if(user) {
+			history.replace('/quote/new');
+		}
+	},[user,history]);
 
-  const handleAuth = async () => {
-    setErrorMessage('');
-    setToastMessage('');
-    setShowResend(false);
+	const handleAuth=async () => {
+		setErrorMessage('');
+		setToastMessage('');
+		setShowResend(false);
 
-    if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+		try {
+			if(isLogin) {
+				// --- LOGIN ---
+				const credentials=usePhone
+					? {phone,password}
+					:{email,password};
 
-      if (error) {
-        setErrorMessage(error.message);
-        return;
-      }
+				const {error}=await supabase.auth.signInWithPassword(credentials);
 
-      const { data: userData } = await supabase.auth.getUser();
+				if(error) {
+					setErrorMessage(error.message);
+					return;
+				}
 
-      if (!userData?.user?.email_confirmed_at) {
-        setErrorMessage('Please verify your email before logging in.');
-        setShowResend(true);
-        await supabase.auth.signOut(); // prevent session reuse
-        return;
-      }
+				const {data: userData}=await supabase.auth.getUser();
 
-      // Insert into users table if not already inserted
-      const { data: existing } = await supabase
-        .from('users')
-        .select('user_id')
-        .eq('user_id', userData.user.id)
-        .single();
+				if(!userData?.user) {
+					setErrorMessage('Authentication failed. Please try again.');
+					return;
+				}
 
-      if (!existing) {
-        await supabase.from('users').insert({
-          user_id: userData.user.id,
-          email: userData.user.email,
-          name: '', // optionally collect name later
-        });
-      }
+				const confirmed=
+					userData.user.email_confirmed_at||userData.user.phone_confirmed_at;
 
-      setToastMessage('Login successful!');
-      history.push('/quote/new');
+				if(!confirmed) {
+					setErrorMessage('Please verify your account before logging in.');
+					setShowResend(!!userData.user.email);
+					await supabase.auth.signOut();
+					return;
+				}
 
-    } else {
-      const { error } = await supabase.auth.signUp({ email, password });
 
-      if (error) {
-        setErrorMessage(error.message);
-      } else {
-        setToastMessage('Sign-up successful! Check your email to verify your account.');
-      }
-    }
-  };
+				// --- Insert into users table if not exists ---
+				const {data: existing}=await supabase
+					.from('users')
+					.select('user_id')
+					.eq('user_id',userData.user.id)
+					.single();
 
-  const handleResendVerification = async () => {
-    setLoadingResend(true);
-    setErrorMessage('');
-    setToastMessage('');
+				if(!existing) {
+					await supabase.from('users').insert({
+						user_id: userData.user.id,
+						email: userData.user.email??null,
+						phone: userData.user.phone??null,
+						name: '',
+					});
+				}
 
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-    });
+				setToastMessage('Login successful!');
+				history.push('/quote/new');
+			} else {
+				const credentials=usePhone
+					? {phone,password}
+					:{email,password};
 
-    if (error) {
-      setErrorMessage(error.message);
-    } else {
-      setToastMessage('Verification email resent!');
-    }
+				const {data,error}=await supabase.auth.signUp(credentials);
 
-    setLoadingResend(false);
-  };
+				if(error) {
+					setErrorMessage(error.message);
+				} else {
+					setToastMessage(
+						usePhone
+							? 'Sign-up successful! Check your phone for a confirmation code.'
+							:'Sign-up successful! Check your email to verify your account.'
+					);
+				}
+			}
+		} catch(e: any) {
+			setErrorMessage(e.message||'Something went wrong');
+		}
+	};
 
-  return (
-	<IonPage>
-	  <IonHeader>
-		<IonToolbar>
-			<IonButtons slot="start">
-			<IonMenuButton />
-			</IonButtons>
-		  <IonTitle>Login</IonTitle>
-		</IonToolbar>
-	  </IonHeader>
-<IonContent fullscreen className="ion-padding">
-        <div
-          style={{
-            height: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            flexDirection: 'column',
-          }}
-        >
-          {/* Logo */}
-          <IonImg
-            src="/assets/logo.png"
-            alt="App Logo"
-            style={{ maxWidth: 120, marginBottom: 20 }}
-          />
+	const handleResendVerification=async () => {
+		setLoadingResend(true);
+		setErrorMessage('');
+		setToastMessage('');
 
-          <IonCard style={{ width: '100%', maxWidth: 400 }}>
-            <IonCardContent>
-              <h2 style={{ textAlign: 'center' }}>{isLogin ? 'Login' : 'Sign Up'}</h2>
+		const {error}=await supabase.auth.resend({
+			type: 'signup',
+			email,
+		});
 
-              {errorMessage && (
-                <IonText color="danger">
-                  <p style={{ marginTop: 10, textAlign: 'center' }}>{errorMessage}</p>
-                </IonText>
-              )}
+		if(error) {
+			setErrorMessage(error.message);
+		} else {
+			setToastMessage('Verification email resent!');
+		}
 
-              <IonInput
-                label="Email"
-                labelPlacement="floating"
-                fill="outline"
-                type="email"
-                value={email}
-                onIonChange={(e) => setEmail(e.detail.value!)}
-                style={{ marginBottom: 16 }}
-              />
+		setLoadingResend(false);
+	};
 
-              <IonInput
-                label="Password"
-                labelPlacement="floating"
-                fill="outline"
-                type="password"
-                value={password}
-                onIonChange={(e) => setPassword(e.detail.value!)}
-                style={{ marginBottom: 16 }}
-              />
+	return (
+		<IonPage>
+			<IonHeader>
+				<IonToolbar>
+					<IonButtons slot="start">
+						<IonMenuButton />
+					</IonButtons>
+					<IonTitle>{isLogin? 'Login':'Sign Up'}</IonTitle>
+				</IonToolbar>
+			</IonHeader>
+			<IonContent fullscreen className="ion-padding">
+				<div
+					style={{
+						height: '100%',
+						display: 'flex',
+						justifyContent: 'center',
+						alignItems: 'center',
+						flexDirection: 'column',
+					}}
+				>
+					<IonImg
+						src="/assets/logo.png"
+						alt="App Logo"
+						style={{maxWidth: 120,marginBottom: 20}}
+					/>
 
-              <IonButton expand="block" onClick={handleAuth}>
-                {isLogin ? 'Login' : 'Sign Up'}
-              </IonButton>
+					<IonCard style={{width: '100%',maxWidth: 400}}>
+						<IonCardContent>
+							<h2 style={{textAlign: 'center'}}>{isLogin? 'Login':'Sign Up'}</h2>
 
-              <IonButton fill="clear" expand="block" onClick={() => setIsLogin(!isLogin)}>
-                {isLogin ? 'Need an account?' : 'Already have an account?'}
-              </IonButton>
+							{errorMessage&&(
+								<IonText color="danger">
+									<p style={{marginTop: 10,textAlign: 'center'}}>{errorMessage}</p>
+								</IonText>
+							)}
 
-              {showResend && (
-                <IonButton
-                  fill="outline"
-                  expand="block"
-                  color="warning"
-                  onClick={handleResendVerification}
-                  disabled={loadingResend}
-                >
-                  {loadingResend ? <IonSpinner name="dots" /> : 'Resend Verification Email'}
-                </IonButton>
-              )}
-            </IonCardContent>
-          </IonCard>
-        </div>
+							{usePhone? (
+								<IonInput
+									label="Phone"
+									labelPlacement="floating"
+									fill="outline"
+									type="tel"
+									value={phone}
+									onIonChange={(e) => setPhone(e.detail.value!)}
+									style={{marginBottom: 16}}
+								/>
+							):(
+								<IonInput
+									label="Email"
+									labelPlacement="floating"
+									fill="outline"
+									type="email"
+									value={email}
+									onIonChange={(e) => setEmail(e.detail.value!)}
+									style={{marginBottom: 16}}
+								/>
+							)}
 
-        <IonToast
-          isOpen={!!toastMessage}
-          message={toastMessage}
-          duration={2000}
-          color="success"
-          onDidDismiss={() => setToastMessage('')}
-        />
-      </IonContent>
-	</IonPage>
-  );
+							<IonInput
+								label="Password"
+								labelPlacement="floating"
+								fill="outline"
+								type="password"
+								value={password}
+								onIonChange={(e) => setPassword(e.detail.value!)}
+								style={{marginBottom: 16}}
+							/>
+
+							<IonButton expand="block" onClick={handleAuth}>
+								{isLogin? 'Login':'Sign Up'}
+							</IonButton>
+
+							<IonButton
+								fill="clear"
+								expand="block"
+								onClick={() => setIsLogin(!isLogin)}
+							>
+								{isLogin? 'Need an account?':'Already have an account?'}
+							</IonButton>
+
+							<IonButton
+								fill="clear"
+								expand="block"
+								onClick={() => setUsePhone(!usePhone)}
+							>
+								{usePhone? 'Use email instead':'Use phone instead'}
+							</IonButton>
+
+							{showResend&&!usePhone&&(
+								<IonButton
+									fill="outline"
+									expand="block"
+									color="warning"
+									onClick={handleResendVerification}
+									disabled={loadingResend}
+								>
+									{loadingResend? <IonSpinner name="dots" />:'Resend Verification Email'}
+								</IonButton>
+							)}
+						</IonCardContent>
+					</IonCard>
+				</div>
+
+				<IonToast
+					isOpen={!!toastMessage}
+					message={toastMessage}
+					duration={2000}
+					color="success"
+					onDidDismiss={() => setToastMessage('')}
+				/>
+			</IonContent>
+		</IonPage>
+	);
 };
 
 export default Login;
