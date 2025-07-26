@@ -18,6 +18,9 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import ManageMaterials from './pages/admin/ManageMaterials';
 import AdminAddons from './pages/admin/ManageAddOns';
 import AdminUsers from './pages/admin/ManageUsers';
+import TaskBoard from './pages/admin/TaskBoard';
+import AdminTaskTemplates from './pages/admin/AdminTaskTemplate';
+import UserTasks from './pages/user/UserTasks';
 
 const ProtectedRoutes: React.FC = () => {
   const { user, loading } = useAuth();
@@ -37,10 +40,13 @@ const ProtectedRoutes: React.FC = () => {
         <Route path="/admin/dashboard" component={AdminDashboard} exact />
         <Route path="/quote/new" component={UserQuoteBuilder} exact />
         <Route path="/quote/history" component={QuoteHistory} exact />
+		<Route path="/tasks/view" component={UserTasks}/>
         <Route path="/admin/signage" component={ManageSignage} exact />
 		<Route path="/admin/materials" component={ManageMaterials} exact />
 		<Route path="/admin/addons" component={AdminAddons} exact />
 		<Route path="/admin/users" component={AdminUsers} exact />
+		<Route path="/admin/taskboard" component={TaskBoard} exact />
+		<Route path="/admin/tasktemplates" component={AdminTaskTemplates}/>
         <Route exact path="/" render={() => <Redirect to="/quote/new" />} />
       </IonRouterOutlet>
     </IonSplitPane>

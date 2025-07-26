@@ -21,6 +21,8 @@ import {
   timeOutline,
   timeSharp,
   logOutOutline,
+  fileTrayFullOutline,
+  fileTrayFullSharp,
 } from 'ionicons/icons';
 
 import './Menu.css';
@@ -46,6 +48,13 @@ const appPages = [
     url: '/quote/history',
     iosIcon: timeOutline,
     mdIcon: timeSharp,
+    adminOnly: false,
+  },
+  {
+    title: 'Tasks',
+    url: '/tasks/view',
+    iosIcon: fileTrayFullOutline,
+    mdIcon: fileTrayFullSharp,
     adminOnly: false,
   },
 ];

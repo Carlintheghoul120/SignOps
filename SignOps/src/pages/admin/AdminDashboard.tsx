@@ -22,6 +22,8 @@ import {
   peopleOutline,
   layersOutline,
   cubeOutline,
+  fileTrayStackedOutline,
+  clipboardOutline,
 } from 'ionicons/icons';
 
 import './AdminDashboard.css';
@@ -49,6 +51,15 @@ const AdminDashboard: React.FC = () => {
       title: 'Materials',
       icon: cubeOutline,
       route: '/admin/materials',
+    },{
+      title: 'Task Board',
+      icon: fileTrayStackedOutline,
+      route: '/admin/taskboard',
+    },
+	{
+      title: 'Task Templates',
+      icon: clipboardOutline,
+      route: '/admin/tasktemplates',
     },
   ];
 

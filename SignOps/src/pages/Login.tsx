@@ -19,6 +19,7 @@ import {useHistory} from 'react-router-dom';
 import {supabase} from '../supbaseclient';
 import {useAuth} from '../AuthContext';
 import {useState,useEffect} from 'react';
+import LOGO from '../assets/img/logo.png'
 
 const Login: React.FC=() => {
 	const history=useHistory();
@@ -158,7 +159,7 @@ const Login: React.FC=() => {
 					}}
 				>
 					<IonImg
-						src="/assets/logo.png"
+						src={LOGO}
 						alt="App Logo"
 						style={{maxWidth: 120,marginBottom: 20}}
 					/>
