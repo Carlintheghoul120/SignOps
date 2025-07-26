@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonSelect,
   IonSelectOption, IonInput, IonLabel, IonList, IonItem, IonCheckbox,
-  IonButton, IonText
+  IonButton, IonText, IonCard, IonCardHeader, IonCardTitle, IonCardContent
 } from '@ionic/react';
 import { supabase } from '../../supbaseclient';
 
@@ -38,10 +38,19 @@ const UserQuoteBuilder: React.FC = () => {
 
   const [width, setWidth] = useState<number>(1);
   const [height, setHeight] = useState<number>(1);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchInitialData();
+    getUser();
   }, []);
+
+  const getUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUserId(user?.id ?? null);
+  };
 
   const fetchInitialData = async () => {
     const [sigs, mats, adds] = await Promise.all([
@@ -75,61 +84,124 @@ const UserQuoteBuilder: React.FC = () => {
     return base + materialCost + addonTotal;
   };
 
+  const handleSubmitQuote = async () => {
+    if (!userId || !selectedSignage || !selectedMaterial) {
+      alert("Missing required fields.");
+      return;
+    }
+
+    setSubmitting(true);
+    const totalCost = calculateTotal();
+    const { data, error } = await supabase
+      .from('quotes')
+      .insert({
+        user_id: userId,
+        signage_id: selectedSignage,
+        material_id: selectedMaterial,
+        width,
+        height,
+        total_cost: totalCost
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error(error);
+      alert("Error submitting quote.");
+      setSubmitting(false);
+      return;
+    }
+
+    const quoteId = data.quote_id;
+    if (selectedAddons.length > 0) {
+      const addonInserts = selectedAddons.map(addon_id => ({ quote_id: quoteId, addon_id }));
+      await supabase.from('quote_addons').insert(addonInserts);
+    }
+
+    alert("Quote submitted!");
+    setSubmitting(false);
+  };
+
+  const area = width * height;
+  const total = calculateTotal();
+
   return (
-    <IonPage>
-      <IonHeader>
-        <IonToolbar>
-          <IonTitle>Quote Builder</IonTitle>
-        </IonToolbar>
-      </IonHeader>
+<IonPage>
+  <IonHeader>
+    <IonToolbar>
+      <IonTitle>Build Your Quote</IonTitle>
+    </IonToolbar>
+  </IonHeader>
 
-      <IonContent className="ion-padding">
-        <IonLabel>Signage Type</IonLabel>
-        <IonSelect
-          placeholder="Select Signage"
-          value={selectedSignage}
-          onIonChange={e => {
-            setSelectedSignage(e.detail.value);
-            setSelectedMaterial(undefined);
-          }}
-        >
-          {signages.map(s => (
-            <IonSelectOption key={s.signage_id} value={s.signage_id}>
-              {s.name}
-            </IonSelectOption>
-          ))}
-        </IonSelect>
+  <IonContent className="ion-padding">
 
-        <IonLabel>Material</IonLabel>
-        <IonSelect
-          placeholder="Select Material"
-          value={selectedMaterial}
-          onIonChange={e => setSelectedMaterial(e.detail.value)}
-        >
-          {materials
-            .filter(m => m.signage_id === selectedSignage)
-            .map(m => (
-              <IonSelectOption key={m.material_id} value={m.material_id}>
-                {m.name}
+    {/* Configuration Section */}
+    <IonCard className="ion-margin-bottom">
+      <IonCardHeader>
+        <IonCardTitle>Configuration</IonCardTitle>
+      </IonCardHeader>
+      <IonCardContent>
+        <IonItem>
+          <IonLabel position="stacked">Signage Type</IonLabel>
+          <IonSelect
+            value={selectedSignage}
+            placeholder="Select Signage"
+            onIonChange={e => {
+              setSelectedSignage(e.detail.value);
+              setSelectedMaterial(undefined);
+            }}
+          >
+            {signages.map(s => (
+              <IonSelectOption key={s.signage_id} value={s.signage_id}>
+                {s.name}
               </IonSelectOption>
             ))}
-        </IonSelect>
+          </IonSelect>
+        </IonItem>
 
-        <IonLabel>Width (m)</IonLabel>
-        <IonInput
-          type="number"
-          value={width}
-          onIonChange={e => setWidth(parseFloat(e.detail.value!) || 0)}
-        />
+        <IonItem>
+          <IonLabel position="stacked">Material</IonLabel>
+          <IonSelect
+            value={selectedMaterial}
+            placeholder="Select Material"
+            onIonChange={e => setSelectedMaterial(e.detail.value)}
+          >
+            {materials
+              .filter(m => m.signage_id === selectedSignage)
+              .map(m => (
+                <IonSelectOption key={m.material_id} value={m.material_id}>
+                  {m.name}
+                </IonSelectOption>
+              ))}
+          </IonSelect>
+        </IonItem>
 
-        <IonLabel>Height (m)</IonLabel>
-        <IonInput
-          type="number"
-          value={height}
-          onIonChange={e => setHeight(parseFloat(e.detail.value!) || 0)}
-        />
+        <IonItem>
+          <IonLabel position="stacked">Width (m)</IonLabel>
+          <IonInput
+            type="number"
+            value={width}
+            onIonChange={e => setWidth(parseFloat(e.detail.value!) || 0)}
+          />
+        </IonItem>
 
-        <IonLabel>Optional Add-ons</IonLabel>
+        <IonItem>
+          <IonLabel position="stacked">Height (m)</IonLabel>
+          <IonInput
+            type="number"
+            value={height}
+            onIonChange={e => setHeight(parseFloat(e.detail.value!) || 0)}
+          />
+        </IonItem>
+      </IonCardContent>
+    </IonCard>
+
+    {/* Add-ons Section */}
+    <IonCard className="ion-margin-bottom">
+      <IonCardHeader>
+        <IonCardTitle>Optional Add-ons</IonCardTitle>
+      </IonCardHeader>
+      <IonCardContent>
         <IonList>
           {addons.map(a => (
             <IonItem key={a.addon_id}>
@@ -155,16 +227,38 @@ const UserQuoteBuilder: React.FC = () => {
             </IonItem>
           ))}
         </IonList>
+      </IonCardContent>
+    </IonCard>
 
-        <IonText color="primary">
-          <h2>Total Cost: R{calculateTotal().toFixed(2)}</h2>
-        </IonText>
+    {/* Quote Summary Section */}
+    <IonCard className="ion-margin-bottom">
+      <IonCardHeader>
+        <IonCardTitle>Quote Summary</IonCardTitle>
+      </IonCardHeader>
+      <IonCardContent>
+        <IonItem>
+          <IonLabel>Area</IonLabel>
+          <IonLabel slot="end">{area.toFixed(2)} m²</IonLabel>
+        </IonItem>
+        <IonItem>
+          <IonLabel>Total Cost</IonLabel>
+          <IonLabel slot="end">R{total.toFixed(2)}</IonLabel>
+        </IonItem>
+      </IonCardContent>
+    </IonCard>
 
-        <IonButton expand="full" onClick={() => alert('Quote saved/submitted soon')}>
-          Submit Quote
-        </IonButton>
-      </IonContent>
-    </IonPage>
+    {/* Submit Button */}
+    <IonButton
+      expand="block"
+      disabled={submitting}
+      onClick={handleSubmitQuote}
+    >
+      {submitting ? "Submitting..." : "Submit Quote"}
+    </IonButton>
+
+  </IonContent>
+</IonPage>
+
   );
 };
 

@@ -9,10 +9,10 @@ import '@ionic/react/css/structure.css';
 import '@ionic/react/css/typography.css';
 import './theme/variables.css';
 
-defineCustomElements(window);
-
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
 );
+
+defineCustomElements(window);
