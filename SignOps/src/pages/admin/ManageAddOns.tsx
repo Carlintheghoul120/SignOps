@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonList, IonItem,
-  IonLabel, IonInput, IonButton, IonModal, IonToast, IonToggle, IonButtons
+  IonLabel, IonInput, IonButton, IonModal, IonToast, IonToggle, IonButtons,
+  IonCard, IonCardHeader, IonCardTitle, IonCardContent, IonIcon, IonText, IonItemDivider, IonMenuButton
 } from '@ionic/react';
 import { supabase } from '../../supbaseclient';
+import { createOutline, trashOutline } from 'ionicons/icons';
 
 interface Addon {
   addon_id: number;
@@ -73,6 +75,9 @@ const AdminAddons: React.FC = () => {
     <IonPage>
       <IonHeader>
         <IonToolbar>
+          <IonButtons slot="start">
+            <IonMenuButton />
+          </IonButtons>
           <IonTitle>Admin: Add-ons</IonTitle>
           <IonButtons slot="end">
             <IonButton onClick={() => setShowModal(true)}>Add Addon</IonButton>
@@ -81,40 +86,57 @@ const AdminAddons: React.FC = () => {
       </IonHeader>
 
       <IonContent className="ion-padding">
+        {addons.length === 0 && (
+          <IonText color="medium">
+            <p className="ion-text-center">No add-ons found.</p>
+          </IonText>
+        )}
         <IonList>
-          {addons.map(a => (
-            <IonItem key={a.addon_id}>
-              <IonLabel className="ion-text-wrap">
-                <h2>{a.name}</h2>
-                <p>{a.description}</p>
-                <p>
-                  {a.is_flat
-                    ? `Flat Rate: R${a.flat_rate?.toFixed(2)}`
-                    : `Per sqm: R${a.per_sqm_rate?.toFixed(2)}`}
-                </p>
-              </IonLabel>
-              <IonButton
-                slot="end"
-                color="medium"
-                onClick={() => {
-                  setCurrentAddon(a);
-                  setShowModal(true);
-                }}
-              >
-                Edit
-              </IonButton>
-              <IonButton
-                slot="end"
-                color="danger"
-                onClick={() => handleDelete(a.addon_id)}
-              >
-                Delete
-              </IonButton>
-            </IonItem>
+          {addons.map((a) => (
+            <IonCard key={a.addon_id}>
+              <IonCardHeader>
+                <IonCardTitle>{a.name}</IonCardTitle>
+              </IonCardHeader>
+              <IonCardContent>
+                <IonText color="medium">
+                  <p>{a.description}</p>
+                  <p>
+                    {a.is_flat
+                      ? `Flat Rate: R${a.flat_rate?.toFixed(2)}`
+                      : `Per sqm: R${a.per_sqm_rate?.toFixed(2)}`}
+                  </p>
+                </IonText>
+                <div className="ion-margin-top ion-text-right">
+                  <IonButton
+                    size="small"
+                    fill="outline"
+                    color="medium"
+                    onClick={() => {
+                      setCurrentAddon(a);
+                      setShowModal(true);
+                    }}
+                  >
+                    <IonIcon icon={createOutline} slot="start" />
+                    Edit
+                  </IonButton>
+                  <IonButton
+                    size="small"
+                    fill="outline"
+                    color="danger"
+                    onClick={() => handleDelete(a.addon_id)}
+                    className="ion-margin-start"
+                  >
+                    <IonIcon icon={trashOutline} slot="start" />
+                    Delete
+                  </IonButton>
+                </div>
+              </IonCardContent>
+            </IonCard>
           ))}
         </IonList>
       </IonContent>
 
+      {/* Modal for Create/Edit */}
       <IonModal isOpen={showModal} onDidDismiss={() => setShowModal(false)}>
         <IonHeader>
           <IonToolbar>
@@ -122,32 +144,33 @@ const AdminAddons: React.FC = () => {
           </IonToolbar>
         </IonHeader>
         <IonContent className="ion-padding">
+          <IonItemDivider>Details</IonItemDivider>
           <IonInput
-            placeholder="Addon Name"
+            label="Addon Name"
+            placeholder="Enter name"
             value={currentAddon.name}
-            onIonChange={e =>
-              setCurrentAddon({ ...currentAddon, name: e.detail.value! })
-            }
+            onIonChange={e => setCurrentAddon({ ...currentAddon, name: e.detail.value! })}
           />
           <IonInput
-            placeholder="Description"
+            label="Description"
+            placeholder="Enter description"
             value={currentAddon.description}
-            onIonChange={e =>
-              setCurrentAddon({ ...currentAddon, description: e.detail.value! })
-            }
+            onIonChange={e => setCurrentAddon({ ...currentAddon, description: e.detail.value! })}
           />
 
-          <IonToggle
-            checked={currentAddon.is_flat ?? true}
-            onIonChange={e => setCurrentAddon({ ...currentAddon, is_flat: e.detail.checked })}
-          >
-            Flat Rate?
-          </IonToggle>
+          <IonItem lines="none" className="ion-margin-top">
+            <IonLabel>Flat Rate?</IonLabel>
+            <IonToggle
+              checked={currentAddon.is_flat ?? true}
+              onIonChange={e => setCurrentAddon({ ...currentAddon, is_flat: e.detail.checked })}
+            />
+          </IonItem>
 
           {currentAddon.is_flat ? (
             <IonInput
-              placeholder="Flat Rate (R)"
+              label="Flat Rate (R)"
               type="number"
+              placeholder="e.g. 500"
               value={currentAddon.flat_rate}
               onIonChange={e =>
                 setCurrentAddon({ ...currentAddon, flat_rate: parseFloat(e.detail.value!) })
@@ -155,8 +178,9 @@ const AdminAddons: React.FC = () => {
             />
           ) : (
             <IonInput
-              placeholder="Rate per sqm (R)"
+              label="Rate per sqm (R)"
               type="number"
+              placeholder="e.g. 150"
               value={currentAddon.per_sqm_rate}
               onIonChange={e =>
                 setCurrentAddon({ ...currentAddon, per_sqm_rate: parseFloat(e.detail.value!) })
@@ -164,10 +188,15 @@ const AdminAddons: React.FC = () => {
             />
           )}
 
-          <IonButton expand="full" onClick={handleSave}>
+          <IonButton expand="block" className="ion-margin-top" onClick={handleSave}>
             Save
           </IonButton>
-          <IonButton expand="full" color="light" onClick={() => setShowModal(false)}>
+          <IonButton
+            expand="block"
+            color="light"
+            className="ion-margin-top"
+            onClick={() => setShowModal(false)}
+          >
             Cancel
           </IonButton>
         </IonContent>

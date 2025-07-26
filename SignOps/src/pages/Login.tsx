@@ -1,22 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import {
-  IonPage,
-  IonContent,
-  IonInput,
-  IonButton,
-  IonCard,
-  IonCardContent,
-  IonText,
-  IonToast,
-  IonImg,
-  IonSpinner,
-} from '@ionic/react';
+import { IonButton, IonButtons, IonCard, IonCardContent, IonContent, IonHeader, IonImg, IonInput, IonMenuButton, IonPage, IonSpinner, IonText, IonTitle, IonToast, IonToolbar } from '@ionic/react';
+import ExploreContainer from '../components/ExploreContainer';
+import './Login.css';
 import { useHistory } from 'react-router-dom';
 import { supabase } from '../supbaseclient';
 import { useAuth } from '../AuthContext';
+import {useState,useEffect} from 'react';
+
 
 const Login: React.FC = () => {
-  const history = useHistory();
+	const history = useHistory();
   const { user } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -104,8 +96,16 @@ const Login: React.FC = () => {
   };
 
   return (
-    <IonPage>
-      <IonContent fullscreen className="ion-padding">
+	<IonPage>
+	  <IonHeader>
+		<IonToolbar>
+			<IonButtons slot="start">
+			<IonMenuButton />
+			</IonButtons>
+		  <IonTitle>Login</IonTitle>
+		</IonToolbar>
+	  </IonHeader>
+<IonContent fullscreen className="ion-padding">
         <div
           style={{
             height: '100%',
@@ -183,7 +183,7 @@ const Login: React.FC = () => {
           onDidDismiss={() => setToastMessage('')}
         />
       </IonContent>
-    </IonPage>
+	</IonPage>
   );
 };
 

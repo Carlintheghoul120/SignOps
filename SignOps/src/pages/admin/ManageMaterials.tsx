@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonList,
   IonItem, IonLabel, IonInput, IonButton, IonModal, IonToast, IonSelect,
-  IonSelectOption, IonButtons
+  IonSelectOption, IonButtons, IonMenuButton, IonIcon, IonFab, IonFabButton
 } from '@ionic/react';
+import { addOutline, createOutline, trashBinOutline } from 'ionicons/icons';
 import { supabase } from '../../supbaseclient';
 
 interface Material {
@@ -76,10 +77,10 @@ const AdminMaterials: React.FC = () => {
     <IonPage>
       <IonHeader>
         <IonToolbar>
-          <IonTitle>Admin: Materials</IonTitle>
-          <IonButtons slot="end">
-            <IonButton onClick={() => setShowModal(true)}>Add Material</IonButton>
+          <IonButtons slot="start">
+            <IonMenuButton />
           </IonButtons>
+          <IonTitle>Admin: Materials</IonTitle>
         </IonToolbar>
       </IonHeader>
 
@@ -88,11 +89,11 @@ const AdminMaterials: React.FC = () => {
           {materials.map(m => (
             <IonItem key={m.material_id}>
               <IonLabel className="ion-text-wrap">
-                <h2>{m.name}</h2>
-                <p>
+                <h2 className="text-lg font-bold">{m.name}</h2>
+                <p className="text-sm text-medium">
                   Signage: {signages.find(s => s.signage_id === m.signage_id)?.name || '—'}
                 </p>
-                <p>R{m.price_per_sqm.toFixed(2)} / sqm</p>
+                <p className="text-sm text-muted">R{m.price_per_sqm.toFixed(2)} / sqm</p>
               </IonLabel>
               <IonButton
                 color="medium"
@@ -102,18 +103,25 @@ const AdminMaterials: React.FC = () => {
                   setShowModal(true);
                 }}
               >
-                Edit
+                <IonIcon slot="icon-only" icon={createOutline} />
               </IonButton>
               <IonButton
                 color="danger"
                 slot="end"
                 onClick={() => handleDelete(m.material_id)}
               >
-                Delete
+                <IonIcon slot="icon-only" icon={trashBinOutline} />
               </IonButton>
             </IonItem>
           ))}
         </IonList>
+
+        {/* FAB Button */}
+        <IonFab vertical="bottom" horizontal="end" slot="fixed">
+          <IonFabButton onClick={() => setShowModal(true)}>
+            <IonIcon icon={addOutline} />
+          </IonFabButton>
+        </IonFab>
       </IonContent>
 
       {/* Modal */}
@@ -125,12 +133,16 @@ const AdminMaterials: React.FC = () => {
         </IonHeader>
         <IonContent className="ion-padding">
           <IonInput
-            placeholder="Material Name"
+            label="Material Name"
+            labelPlacement="floating"
+            fill="outline"
             value={currentMaterial.name}
             onIonChange={e => setCurrentMaterial({ ...currentMaterial, name: e.detail.value! })}
           />
           <IonSelect
-            placeholder="Select Signage Type"
+            label="Select Signage Type"
+            labelPlacement="floating"
+            fill="outline"
             value={currentMaterial.signage_id}
             onIonChange={e =>
               setCurrentMaterial({ ...currentMaterial, signage_id: e.detail.value })
@@ -143,8 +155,10 @@ const AdminMaterials: React.FC = () => {
             ))}
           </IonSelect>
           <IonInput
-            placeholder="Price per sqm (R)"
+            label="Price per sqm (R)"
+            labelPlacement="floating"
             type="number"
+            fill="outline"
             value={currentMaterial.price_per_sqm}
             onIonChange={e =>
               setCurrentMaterial({
@@ -153,10 +167,15 @@ const AdminMaterials: React.FC = () => {
               })
             }
           />
-          <IonButton expand="full" onClick={handleSave}>
+          <IonButton expand="block" className="ion-margin-top" onClick={handleSave}>
             Save
           </IonButton>
-          <IonButton expand="full" color="light" onClick={() => setShowModal(false)}>
+          <IonButton
+            expand="block"
+            color="light"
+            className="ion-margin-top"
+            onClick={() => setShowModal(false)}
+          >
             Cancel
           </IonButton>
         </IonContent>

@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonSelect,
   IonSelectOption, IonInput, IonLabel, IonList, IonItem, IonCheckbox,
-  IonButton, IonText, IonCard, IonCardHeader, IonCardTitle, IonCardContent
+  IonButton, IonText, IonCard, IonCardHeader, IonCardTitle, IonCardContent,
+  IonGrid, IonRow, IonCol
 } from '@ionic/react';
 import { supabase } from '../../supbaseclient';
 
@@ -126,139 +127,113 @@ const UserQuoteBuilder: React.FC = () => {
   const total = calculateTotal();
 
   return (
-<IonPage>
-  <IonHeader>
-    <IonToolbar>
-      <IonTitle>Build Your Quote</IonTitle>
-    </IonToolbar>
-  </IonHeader>
+    <IonPage>
+      <IonHeader>
+        <IonToolbar color="primary">
+          <IonTitle className="ion-text-center">Quote Builder</IonTitle>
+        </IonToolbar>
+      </IonHeader>
 
-  <IonContent className="ion-padding">
+      <IonContent className="ion-padding">
+        <IonGrid fixed>
+          <IonRow className="ion-justify-content-center">
+            <IonCol sizeMd="8" sizeLg="6">
+              <IonCard className="ion-padding">
+                <IonCardHeader>
+                  <IonCardTitle className="ion-text-center">Configuration</IonCardTitle>
+                </IonCardHeader>
+                <IonCardContent>
+                  <IonItem>
+                    <IonLabel position="stacked">Signage Type</IonLabel>
+                    <IonSelect
+                      value={selectedSignage}
+                      placeholder="Select Signage"
+                      onIonChange={e => {
+                        setSelectedSignage(e.detail.value);
+                        setSelectedMaterial(undefined);
+                      }}>
+                      {signages.map(s => (
+                        <IonSelectOption key={s.signage_id} value={s.signage_id}>{s.name}</IonSelectOption>
+                      ))}
+                    </IonSelect>
+                  </IonItem>
 
-    {/* Configuration Section */}
-    <IonCard className="ion-margin-bottom">
-      <IonCardHeader>
-        <IonCardTitle>Configuration</IonCardTitle>
-      </IonCardHeader>
-      <IonCardContent>
-        <IonItem>
-          <IonLabel position="stacked">Signage Type</IonLabel>
-          <IonSelect
-            value={selectedSignage}
-            placeholder="Select Signage"
-            onIonChange={e => {
-              setSelectedSignage(e.detail.value);
-              setSelectedMaterial(undefined);
-            }}
-          >
-            {signages.map(s => (
-              <IonSelectOption key={s.signage_id} value={s.signage_id}>
-                {s.name}
-              </IonSelectOption>
-            ))}
-          </IonSelect>
-        </IonItem>
+                  <IonItem>
+                    <IonLabel position="stacked">Material</IonLabel>
+                    <IonSelect
+                      value={selectedMaterial}
+                      placeholder="Select Material"
+                      onIonChange={e => setSelectedMaterial(e.detail.value)}>
+                      {materials.filter(m => m.signage_id === selectedSignage).map(m => (
+                        <IonSelectOption key={m.material_id} value={m.material_id}>{m.name}</IonSelectOption>
+                      ))}
+                    </IonSelect>
+                  </IonItem>
 
-        <IonItem>
-          <IonLabel position="stacked">Material</IonLabel>
-          <IonSelect
-            value={selectedMaterial}
-            placeholder="Select Material"
-            onIonChange={e => setSelectedMaterial(e.detail.value)}
-          >
-            {materials
-              .filter(m => m.signage_id === selectedSignage)
-              .map(m => (
-                <IonSelectOption key={m.material_id} value={m.material_id}>
-                  {m.name}
-                </IonSelectOption>
-              ))}
-          </IonSelect>
-        </IonItem>
+                  <IonItem>
+                    <IonLabel position="stacked">Width (m)</IonLabel>
+                    <IonInput type="number" value={width} onIonChange={e => setWidth(parseFloat(e.detail.value!) || 0)} />
+                  </IonItem>
 
-        <IonItem>
-          <IonLabel position="stacked">Width (m)</IonLabel>
-          <IonInput
-            type="number"
-            value={width}
-            onIonChange={e => setWidth(parseFloat(e.detail.value!) || 0)}
-          />
-        </IonItem>
+                  <IonItem>
+                    <IonLabel position="stacked">Height (m)</IonLabel>
+                    <IonInput type="number" value={height} onIonChange={e => setHeight(parseFloat(e.detail.value!) || 0)} />
+                  </IonItem>
+                </IonCardContent>
+              </IonCard>
 
-        <IonItem>
-          <IonLabel position="stacked">Height (m)</IonLabel>
-          <IonInput
-            type="number"
-            value={height}
-            onIonChange={e => setHeight(parseFloat(e.detail.value!) || 0)}
-          />
-        </IonItem>
-      </IonCardContent>
-    </IonCard>
+              <IonCard className="ion-padding">
+                <IonCardHeader>
+                  <IonCardTitle className="ion-text-center">Optional Add-ons</IonCardTitle>
+                </IonCardHeader>
+                <IonCardContent>
+                  <IonList>
+                    {addons.map(a => (
+                      <IonItem key={a.addon_id}>
+                        <IonLabel>{a.name} <IonText color="medium">
+                          ({a.is_flat ? `R${a.flat_rate?.toFixed(2)}` : `R${a.per_sqm_rate?.toFixed(2)} per sqm`})
+                        </IonText></IonLabel>
+                        <IonCheckbox
+                          slot="end"
+                          checked={selectedAddons.includes(a.addon_id)}
+                          onIonChange={e => {
+                            if (e.detail.checked) {
+                              setSelectedAddons([...selectedAddons, a.addon_id]);
+                            } else {
+                              setSelectedAddons(selectedAddons.filter(id => id !== a.addon_id));
+                            }
+                          }}
+                        />
+                      </IonItem>
+                    ))}
+                  </IonList>
+                </IonCardContent>
+              </IonCard>
 
-    {/* Add-ons Section */}
-    <IonCard className="ion-margin-bottom">
-      <IonCardHeader>
-        <IonCardTitle>Optional Add-ons</IonCardTitle>
-      </IonCardHeader>
-      <IonCardContent>
-        <IonList>
-          {addons.map(a => (
-            <IonItem key={a.addon_id}>
-              <IonLabel>
-                {a.name}{' '}
-                <IonText color="medium">
-                  ({a.is_flat
-                    ? `R${a.flat_rate?.toFixed(2)}`
-                    : `R${a.per_sqm_rate?.toFixed(2)} per sqm`})
-                </IonText>
-              </IonLabel>
-              <IonCheckbox
-                slot="end"
-                checked={selectedAddons.includes(a.addon_id)}
-                onIonChange={e => {
-                  if (e.detail.checked) {
-                    setSelectedAddons([...selectedAddons, a.addon_id]);
-                  } else {
-                    setSelectedAddons(selectedAddons.filter(id => id !== a.addon_id));
-                  }
-                }}
-              />
-            </IonItem>
-          ))}
-        </IonList>
-      </IonCardContent>
-    </IonCard>
+              <IonCard className="ion-padding">
+                <IonCardHeader>
+                  <IonCardTitle className="ion-text-center">Quote Summary</IonCardTitle>
+                </IonCardHeader>
+                <IonCardContent>
+                  <IonItem>
+                    <IonLabel>Area</IonLabel>
+                    <IonLabel slot="end">{area.toFixed(2)} m²</IonLabel>
+                  </IonItem>
+                  <IonItem>
+                    <IonLabel>Total Cost</IonLabel>
+                    <IonLabel slot="end">R{total.toFixed(2)}</IonLabel>
+                  </IonItem>
+                </IonCardContent>
+              </IonCard>
 
-    {/* Quote Summary Section */}
-    <IonCard className="ion-margin-bottom">
-      <IonCardHeader>
-        <IonCardTitle>Quote Summary</IonCardTitle>
-      </IonCardHeader>
-      <IonCardContent>
-        <IonItem>
-          <IonLabel>Area</IonLabel>
-          <IonLabel slot="end">{area.toFixed(2)} m²</IonLabel>
-        </IonItem>
-        <IonItem>
-          <IonLabel>Total Cost</IonLabel>
-          <IonLabel slot="end">R{total.toFixed(2)}</IonLabel>
-        </IonItem>
-      </IonCardContent>
-    </IonCard>
-
-    {/* Submit Button */}
-    <IonButton
-      expand="block"
-      disabled={submitting}
-      onClick={handleSubmitQuote}
-    >
-      {submitting ? "Submitting..." : "Submit Quote"}
-    </IonButton>
-
-  </IonContent>
-</IonPage>
-
+              <IonButton expand="block" disabled={submitting} onClick={handleSubmitQuote}>
+                {submitting ? "Submitting..." : "Submit Quote"}
+              </IonButton>
+            </IonCol>
+          </IonRow>
+        </IonGrid>
+      </IonContent>
+    </IonPage>
   );
 };
 

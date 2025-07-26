@@ -1,37 +1,63 @@
 import React from 'react';
 import {
-  IonPage, IonHeader, IonToolbar, IonTitle,
-  IonContent, IonSegment, IonSegmentButton, IonLabel
+  IonPage,
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonContent,
+  IonCard,
+  IonCardHeader,
+  IonCardTitle,
+  IonCardContent,
+  IonGrid,
+  IonRow,
+  IonCol,
+  IonButton
 } from '@ionic/react';
-import AdminSignage from './ManageSignage';
-import AdminMaterials from './ManageMaterials';
-import AdminAddons from './ManageAddOns';
+import { useHistory } from 'react-router-dom';
 
-const ManageSignage: React.FC = () => {
-  const [tab, setTab] = React.useState('signage');
+const AdminDashboard: React.FC = () => {
+  const history = useHistory();
 
   return (
     <IonPage>
       <IonHeader>
         <IonToolbar>
-          <IonTitle>Manage Signage</IonTitle>
-        </IonToolbar>
-        <IonToolbar>
-			<IonSegment value={tab} onIonChange={e => setTab(e.detail.value as string)}>
-            <IonSegmentButton value="signage"><IonLabel>Types</IonLabel></IonSegmentButton>
-            <IonSegmentButton value="materials"><IonLabel>Materials</IonLabel></IonSegmentButton>
-            <IonSegmentButton value="addons"><IonLabel>Add-ons</IonLabel></IonSegmentButton>
-          </IonSegment>
+          <IonTitle>Admin Dashboard</IonTitle>
         </IonToolbar>
       </IonHeader>
 
-      <IonContent>
-        {tab === 'signage' && <AdminSignage />}
-        {tab === 'materials' && <AdminMaterials />}
-        {tab === 'addons' && <AdminAddons />}
+      <IonContent className="ion-padding">
+        <IonGrid fixed className="ion-justify-content-center ion-align-items-center" style={{ height: '100%' }}>
+          <IonRow className="ion-justify-content-center">
+            <IonCol size="12" sizeMd="8" sizeLg="6">
+              <IonCard className="ion-padding">
+                <IonCardHeader>
+                  <IonCardTitle className="ion-text-center">Admin Tools</IonCardTitle>
+                </IonCardHeader>
+
+                <IonCardContent className="ion-text-center">
+                  <IonButton expand="block" color="primary" className="ion-margin-bottom" onClick={() => history.push('/admin/signage')}>
+                    Manage Signage
+                  </IonButton>
+
+                  <IonButton expand="block" color="secondary" className="ion-margin-bottom" onClick={() => history.push('/admin/users')}>
+                    Manage Users
+                  </IonButton>
+				  <IonButton expand="block" color="tertiary" className="ion-margin-bottom" onClick={() => history.push('/admin/addons')}>
+					Manage Add-ons
+				  </IonButton>
+				  <IonButton expand="block" color="success" className="ion-margin-bottom" onClick={() => history.push('/admin/materials')}>
+					Manage Materials
+				  </IonButton>
+                </IonCardContent>
+              </IonCard>
+            </IonCol>
+          </IonRow>
+        </IonGrid>
       </IonContent>
     </IonPage>
   );
 };
 
-export default ManageSignage;
+export default AdminDashboard;
