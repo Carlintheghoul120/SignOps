@@ -74,10 +74,10 @@ const AdminAddons: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar>
-          <IonButtons slot="start">
-            <IonMenuButton />
-          </IonButtons>
+        <IonToolbar color="primary">
+					 <IonButtons slot="start">
+					<IonMenuButton />
+				  </IonButtons>
           <IonTitle>Admin: Add-ons</IonTitle>
           <IonButtons slot="end">
             <IonButton onClick={() => setShowModal(true)}>Add Addon</IonButton>

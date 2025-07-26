@@ -3,7 +3,9 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonSelect,
   IonSelectOption, IonInput, IonLabel, IonList, IonItem, IonCheckbox,
   IonButton, IonText, IonCard, IonCardHeader, IonCardTitle, IonCardContent,
-  IonGrid, IonRow, IonCol
+  IonGrid, IonRow, IonCol,
+  IonButtons,
+  IonMenuButton
 } from '@ionic/react';
 import { supabase } from '../../supbaseclient';
 interface SignageType {
@@ -129,6 +131,9 @@ const UserQuoteBuilder: React.FC = () => {
     <IonPage>
       <IonHeader>
         <IonToolbar color="primary">
+			 <IonButtons slot="start">
+            <IonMenuButton />
+          </IonButtons>
           <IonTitle className="ion-text-center">Quote Builder</IonTitle>
         </IonToolbar>
       </IonHeader>

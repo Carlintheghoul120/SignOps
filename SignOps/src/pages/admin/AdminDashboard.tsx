@@ -12,6 +12,8 @@ import {
   IonCardContent,
   IonIcon,
   IonLabel,
+  IonButtons,
+  IonMenuButton,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 
@@ -53,7 +55,10 @@ const AdminDashboard: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar>
+        <IonToolbar color="primary">
+					 <IonButtons slot="start">
+					<IonMenuButton />
+				  </IonButtons>
           <IonTitle>Admin Dashboard</IonTitle>
         </IonToolbar>
       </IonHeader>

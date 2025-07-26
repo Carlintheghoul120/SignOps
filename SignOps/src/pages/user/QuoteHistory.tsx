@@ -1,189 +1,70 @@
-import { IonButton, IonButtons, IonCard, IonCardContent, IonContent, IonHeader, IonImg, IonInput, IonMenuButton, IonPage, IonSpinner, IonText, IonTitle, IonToast, IonToolbar } from '@ionic/react';
-import ExploreContainer from '../../components/ExploreContainer';
-import { useHistory } from 'react-router-dom';
-import { supabase } from '../../supbaseclient';
+import React, { useEffect, useState } from 'react';
+import {
+  IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
+  IonList, IonItem, IonLabel, IonText,
+  IonButtons,
+  IonMenuButton
+} from '@ionic/react';
 import { useAuth } from '../../AuthContext';
-import {useState,useEffect} from 'react';
+import { supabase } from '../../supbaseclient';
 
+interface Quote {
+  quote_id: string;
+  width: number;
+  height: number;
+  total_cost: number;
+  created_at: string;
+}
 
-const Login: React.FC = () => {
-	const history = useHistory();
+const QuoteHistory: React.FC = () => {
   const { user } = useAuth();
-
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-  const [toastMessage, setToastMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [showResend, setShowResend] = useState(false);
-  const [loadingResend, setLoadingResend] = useState(false);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
 
   useEffect(() => {
-    if (user) {
-      history.replace('/quote/new');
-    }
-  }, [user, history]);
+    if (user?.id) fetchQuotes();
+  }, [user]);
 
-  const handleAuth = async () => {
-    setErrorMessage('');
-    setToastMessage('');
-    setShowResend(false);
+  const fetchQuotes = async () => {
+    const { data, error } = await supabase
+      .from('quotes')
+      .select('*')
+      .eq('user_id', user?.id)
+      .order('created_at', { ascending: false });
 
-    if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-      if (error) {
-        setErrorMessage(error.message);
-        return;
-      }
-
-      const { data: userData } = await supabase.auth.getUser();
-
-      if (!userData?.user?.email_confirmed_at) {
-        setErrorMessage('Please verify your email before logging in.');
-        setShowResend(true);
-        await supabase.auth.signOut(); // prevent session reuse
-        return;
-      }
-
-      // Insert into users table if not already inserted
-      const { data: existing } = await supabase
-        .from('users')
-        .select('user_id')
-        .eq('user_id', userData.user.id)
-        .single();
-
-      if (!existing) {
-        await supabase.from('users').insert({
-          user_id: userData.user.id,
-          email: userData.user.email,
-          name: '', // optionally collect name later
-        });
-      }
-
-      setToastMessage('Login successful!');
-      history.push('/quote/new');
-
-    } else {
-      const { error } = await supabase.auth.signUp({ email, password });
-
-      if (error) {
-        setErrorMessage(error.message);
-      } else {
-        setToastMessage('Sign-up successful! Check your email to verify your account.');
-      }
-    }
-  };
-
-  const handleResendVerification = async () => {
-    setLoadingResend(true);
-    setErrorMessage('');
-    setToastMessage('');
-
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-    });
-
-    if (error) {
-      setErrorMessage(error.message);
-    } else {
-      setToastMessage('Verification email resent!');
-    }
-
-    setLoadingResend(false);
+    if (data) setQuotes(data);
+    if (error) console.error(error.message);
   };
 
   return (
-	<IonPage>
-	  <IonHeader>
-		<IonToolbar>
-			<IonButtons slot="start">
-			<IonMenuButton />
-			</IonButtons>
-		  <IonTitle>Login</IonTitle>
-		</IonToolbar>
-	  </IonHeader>
-<IonContent fullscreen className="ion-padding">
-        <div
-          style={{
-            height: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            flexDirection: 'column',
-          }}
-        >
-          {/* Logo */}
-          <IonImg
-            src="/assets/logo.png"
-            alt="App Logo"
-            style={{ maxWidth: 120, marginBottom: 20 }}
-          />
-
-          <IonCard style={{ width: '100%', maxWidth: 400 }}>
-            <IonCardContent>
-              <h2 style={{ textAlign: 'center' }}>{isLogin ? 'Login' : 'Sign Up'}</h2>
-
-              {errorMessage && (
-                <IonText color="danger">
-                  <p style={{ marginTop: 10, textAlign: 'center' }}>{errorMessage}</p>
-                </IonText>
-              )}
-
-              <IonInput
-                label="Email"
-                labelPlacement="floating"
-                fill="outline"
-                type="email"
-                value={email}
-                onIonChange={(e) => setEmail(e.detail.value!)}
-                style={{ marginBottom: 16 }}
-              />
-
-              <IonInput
-                label="Password"
-                labelPlacement="floating"
-                fill="outline"
-                type="password"
-                value={password}
-                onIonChange={(e) => setPassword(e.detail.value!)}
-                style={{ marginBottom: 16 }}
-              />
-
-              <IonButton expand="block" onClick={handleAuth}>
-                {isLogin ? 'Login' : 'Sign Up'}
-              </IonButton>
-
-              <IonButton fill="clear" expand="block" onClick={() => setIsLogin(!isLogin)}>
-                {isLogin ? 'Need an account?' : 'Already have an account?'}
-              </IonButton>
-
-              {showResend && (
-                <IonButton
-                  fill="outline"
-                  expand="block"
-                  color="warning"
-                  onClick={handleResendVerification}
-                  disabled={loadingResend}
-                >
-                  {loadingResend ? <IonSpinner name="dots" /> : 'Resend Verification Email'}
-                </IonButton>
-              )}
-            </IonCardContent>
-          </IonCard>
-        </div>
-
-        <IonToast
-          isOpen={!!toastMessage}
-          message={toastMessage}
-          duration={2000}
-          color="success"
-          onDidDismiss={() => setToastMessage('')}
-        />
+    <IonPage>
+      <IonHeader>
+        <IonToolbar color="primary">
+			 <IonButtons slot="start">
+            <IonMenuButton />
+          </IonButtons>
+          <IonTitle className="ion-text-center">Quote History</IonTitle>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent className="ion-padding">
+        {quotes.length === 0 ? (
+          <IonText color="medium"><p>No quotes found.</p></IonText>
+        ) : (
+          <IonList>
+            {quotes.map(q => (
+              <IonItem key={q.quote_id}>
+                <IonLabel>
+                  <h2>Quote #{q.quote_id.slice(0, 6)}...</h2>
+                  <p>Size: {q.width}m × {q.height}m</p>
+                  <p>Total: R{q.total_cost.toFixed(2)}</p>
+                  <p>{new Date(q.created_at).toLocaleString()}</p>
+                </IonLabel>
+              </IonItem>
+            ))}
+          </IonList>
+        )}
       </IonContent>
-	</IonPage>
+    </IonPage>
   );
 };
 
-export default Login;
+export default QuoteHistory;
