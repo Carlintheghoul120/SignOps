@@ -31,7 +31,7 @@ const Login: React.FC = () => {
           placeholder="Email"
           type="email"
           value={email}
-          onIonChange={e => setEmail(e.detail.value!)}
+           onIonChange={e => setEmail(e.detail.value!)}
         />
         <IonInput
           placeholder="Password"
