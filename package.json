@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@capacitor/assets": "^3.0.5",
     "react-beautiful-dnd": "^13.1.1"
   },
   "devDependencies": {

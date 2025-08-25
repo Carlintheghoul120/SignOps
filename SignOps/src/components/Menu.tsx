@@ -23,7 +23,9 @@ import {
   logOutOutline,
   fileTrayFullOutline,
   fileTrayFullSharp,
+  closeOutline,
 } from 'ionicons/icons';
+import { useHistory } from 'react-router-dom';
 
 import './Menu.css';
 import LOGO from '../assets/img/logo.png';
@@ -63,6 +65,17 @@ const Menu: React.FC = () => {
   const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+const history = useHistory();
+
+useEffect(() => {
+  const unlisten = history.listen(() => {
+    const menu = document.querySelector('ion-menu');
+    if (menu && (menu as HTMLIonMenuElement).isOpen) {
+      (menu as HTMLIonMenuElement).close();
+    }
+  });
+  return () => unlisten();
+}, []);
 
   useEffect(() => {
     const checkAdminStatus = async () => {
@@ -96,12 +109,21 @@ const Menu: React.FC = () => {
     }
   };
 
+   const closeMenu = () => {
+    const menu = document.querySelector('ion-menu');
+    if (menu) (menu as HTMLIonMenuElement).close();
+  };
+
   const filteredPages = appPages.filter(page => !page.adminOnly || isAdmin);
 
   return (
     <IonMenu side="start" contentId="main" type="overlay">
       <IonLoading isOpen={loading} message="Logging out..." spinner="crescent" />
-      <IonContent className="menu-content">
+  <button className="menu-close-button" onClick={closeMenu}>
+    <IonIcon icon={closeOutline} />
+  </button>
+
+	  <IonContent className="menu-content">
         <IonList>
           <IonListHeader className="list-header">
             <img src={LOGO} alt="Logo" className="signup-logo" />
