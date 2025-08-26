@@ -61,7 +61,7 @@ const AdminUsers: React.FC=() => {
 					<IonButtons slot="start">
 						<IonMenuButton />
 					</IonButtons>
-					<IonTitle className="ion-text-center">Admin: Users</IonTitle>
+					<IonTitle className="ion-text-center">Users</IonTitle>
 				</IonToolbar>
 			</IonHeader>
 

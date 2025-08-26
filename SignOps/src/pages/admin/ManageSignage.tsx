@@ -128,7 +128,7 @@ const AdminSignage: React.FC = () => {
           <IonButtons slot="start">
             <IonMenuButton />
           </IonButtons>
-          <IonTitle className="ion-text-center">Admin: Signage Types</IonTitle>
+          <IonTitle className="ion-text-center">Signage Types</IonTitle>
           <IonButtons slot="end">
             <IonButton onClick={() => {
               setCurrentSignage({});

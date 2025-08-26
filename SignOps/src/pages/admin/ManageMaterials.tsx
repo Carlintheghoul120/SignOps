@@ -80,7 +80,7 @@ const AdminMaterials: React.FC=() => {
 					<IonButtons slot="start">
 						<IonMenuButton />
 					</IonButtons>
-					<IonTitle className="ion-text-center">Admin: Materials</IonTitle>
+					<IonTitle className="ion-text-center">Materials</IonTitle>
 				</IonToolbar>
 			</IonHeader>
 

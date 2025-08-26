@@ -78,7 +78,7 @@ const AdminAddons: React.FC = () => {
 					 <IonButtons slot="start">
 					<IonMenuButton />
 				  </IonButtons>
-          <IonTitle>Admin: Add-ons</IonTitle>
+          <IonTitle>Add-ons</IonTitle>
           <IonButtons slot="end">
             <IonButton onClick={() => setShowModal(true)}>Add Addon</IonButton>
           </IonButtons>
