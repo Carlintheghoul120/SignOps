@@ -3,10 +3,20 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonInput, IonLabel, IonItem, IonButton, IonSelect, IonSelectOption,
   IonCard, IonCardHeader, IonCardTitle, IonCardContent, IonText, IonList,
-  IonCheckbox, IonGrid, IonRow, IonCol, IonButtons, IonMenuButton, IonToast
+  IonCheckbox, IonGrid, IonRow, IonCol, IonButtons, IonMenuButton, IonToast, IonIcon
 } from '@ionic/react';
+import { closeCircle } from 'ionicons/icons';
 import { supabase } from '../../supbaseclient';
 import PreviewQuote from './PreviewQuote';
+
+const safeFloat = (v: string | null | undefined, fallback = 0) => {
+  const n = parseFloat(String(v ?? '').trim());
+  return Number.isFinite(n) ? n : fallback;
+};
+const safeInt = (v: string | null | undefined, fallback = 0) => {
+  const n = parseInt(String(v ?? '').trim(), 10);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 const UserQuoteBuilder: React.FC = () => {
   const [section, setSection] = useState(0);
@@ -16,6 +26,7 @@ const UserQuoteBuilder: React.FC = () => {
   const [signages, setSignages] = useState<any[]>([]);
   const [addons, setAddons] = useState<any[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // form state
   const [form, setForm] = useState({
@@ -29,7 +40,8 @@ const UserQuoteBuilder: React.FC = () => {
     height: 1,
     addon_ids: [] as number[],
     misc_items: [] as { name: string; quantity: number; unit_price: number }[],
-    distance_km: 0
+    distance_km: 0,
+    // petrol_fee: 0, // optional: if you want to set from client
   });
 
   useEffect(() => {
@@ -39,8 +51,8 @@ const UserQuoteBuilder: React.FC = () => {
 
   const fetchData = async () => {
     const [sigs, adds] = await Promise.all([
-      supabase.from('signage_types').select('*'),
-      supabase.from('addons').select('*')
+      supabase.from('signage_types').select('*').order('name', { ascending: true }),
+      supabase.from('addons').select('*').order('name', { ascending: true })
     ]);
     setSignages(sigs.data || []);
     setAddons(adds.data || []);
@@ -52,68 +64,108 @@ const UserQuoteBuilder: React.FC = () => {
   };
 
   const handleAddMiscItem = () => {
-    setForm({
-      ...form,
-      misc_items: [...form.misc_items, { name: '', quantity: 1, unit_price: 0 }]
+    setForm(f => ({
+      ...f,
+      misc_items: [...f.misc_items, { name: '', quantity: 1, unit_price: 0 }]
+    }));
+  };
+
+  const handleRemoveMiscItem = (idx: number) => {
+    setForm(f => {
+      const copy = [...f.misc_items];
+      copy.splice(idx, 1);
+      return { ...f, misc_items: copy };
     });
   };
+
+  const canGoNext0 = !!(form.company_name || form.contact_name || form.contact_email || form.contact_phone || form.client_address); // relax as needed
+  const canGoNext1 = !!form.signage_id && form.width > 0 && form.height > 0;
 
   const handleSubmit = async () => {
     if (!userId || !form.signage_id) {
       setToastMsg('Missing required fields.');
       return;
     }
+    setSubmitting(true);
+    setToastMsg('');
 
     // auto-add Call-out Fee addon if distance > 10km
     let finalAddonIds = [...form.addon_ids];
     if (form.distance_km > 10) {
-      const callout = addons.find(a => a.name.toLowerCase().includes('call-out'));
+      const callout = addons.find(a => {
+        const n = String(a.name || '').toLowerCase();
+        return n.includes('call-out') || n.includes('call out');
+      });
       if (callout && !finalAddonIds.includes(callout.addon_id)) {
         finalAddonIds.push(callout.addon_id);
       }
     }
 
-    const { data, error } = await supabase.from('quotes').insert({
-      user_id: userId,
-      signage_id: form.signage_id,
-      width: form.width,
-      height: form.height,
-      company_name: form.company_name,
-      contact_name: form.contact_name,
-      contact_email: form.contact_email,
-      contact_phone: form.contact_phone,
-      client_address: form.client_address,
-      google_distance_km: form.distance_km
-    }).select().single();
+    // Optional: compute petrol fee client-side if you want (example: R6.50/km)
+    // const petrolRate = 6.5;
+    // const petrolFee = Math.max(0, form.distance_km) * petrolRate;
 
-    if (error) {
+    const { data, error } = await supabase
+      .from('quotes')
+      .insert({
+        user_id: userId,
+        signage_id: form.signage_id,
+        width: form.width,
+        height: form.height,
+        company_name: form.company_name,
+        contact_name: form.contact_name,
+        contact_email: form.contact_email,
+        contact_phone: form.contact_phone,
+        client_address: form.client_address,
+        google_distance_km: form.distance_km,
+        // petrol_fee: petrolFee,
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
       console.error(error);
       setToastMsg('Failed to save quote.');
+      setSubmitting(false);
       return;
     }
 
-    const newQuoteId = data.quote_id;
+    const newQuoteId = data.quote_id as string;
 
-    if (finalAddonIds.length > 0) {
-      await supabase.from('quote_addons').insert(
-        finalAddonIds.map(id => ({ quote_id: newQuoteId, addon_id: id }))
-      );
+    try {
+      if (finalAddonIds.length > 0) {
+        const { error: qaErr } = await supabase
+          .from('quote_addons')
+          .insert(finalAddonIds.map(id => ({ quote_id: newQuoteId, addon_id: id })));
+        if (qaErr) throw qaErr;
+      }
+
+      if (form.misc_items.length > 0) {
+        const miscRows = form.misc_items
+          .filter(m => (m.name || '').trim().length > 0)
+          .map(m => ({
+            quote_id: newQuoteId,
+            name: m.name,
+            quantity: m.quantity,
+            unit_price: m.unit_price
+          }));
+        if (miscRows.length > 0) {
+          const { error: qmErr } = await supabase.from('quote_misc_items').insert(miscRows);
+          if (qmErr) throw qmErr;
+        }
+      }
+
+      setQuoteId(newQuoteId);
+      setToastMsg('Quote submitted!');
+      setSection(3);
+    } catch (e) {
+      console.error(e);
+      setToastMsg('Saved quote but failed on add-ons or misc items.');
+      setQuoteId(newQuoteId); // still allow preview; the view will reflect whatever did save
+      setSection(3);
+    } finally {
+      setSubmitting(false);
     }
-
-    if (form.misc_items.length > 0) {
-      await supabase.from('quote_misc_items').insert(
-        form.misc_items.map(m => ({
-          quote_id: newQuoteId,
-          name: m.name,
-          quantity: m.quantity,
-          unit_price: m.unit_price
-        }))
-      );
-    }
-
-    setQuoteId(newQuoteId);
-    setToastMsg('Quote submitted!');
-    setSection(3);
   };
 
   return (
@@ -140,44 +192,94 @@ const UserQuoteBuilder: React.FC = () => {
                   {/* SECTION 0: Client Info */}
                   {section === 0 && (
                     <>
-                      <IonItem><IonLabel position="stacked">Company Name</IonLabel>
-                        <IonInput value={form.company_name} onIonChange={e => setForm({ ...form, company_name: e.detail.value! })} />
+                      <IonItem>
+                        <IonLabel position="stacked">Company Name</IonLabel>
+                        <IonInput
+                          value={form.company_name}
+                          onIonChange={e => setForm({ ...form, company_name: e.detail.value ?? '' })}
+                        />
                       </IonItem>
-                      <IonItem><IonLabel position="stacked">Contact Name</IonLabel>
-                        <IonInput value={form.contact_name} onIonChange={e => setForm({ ...form, contact_name: e.detail.value! })} />
+                      <IonItem>
+                        <IonLabel position="stacked">Contact Name</IonLabel>
+                        <IonInput
+                          value={form.contact_name}
+                          onIonChange={e => setForm({ ...form, contact_name: e.detail.value ?? '' })}
+                        />
                       </IonItem>
-                      <IonItem><IonLabel position="stacked">Contact Email</IonLabel>
-                        <IonInput value={form.contact_email} onIonChange={e => setForm({ ...form, contact_email: e.detail.value! })} />
+                      <IonItem>
+                        <IonLabel position="stacked">Contact Email</IonLabel>
+                        <IonInput
+                          type="email"
+                          value={form.contact_email}
+                          onIonChange={e => setForm({ ...form, contact_email: e.detail.value ?? '' })}
+                        />
                       </IonItem>
-                      <IonItem><IonLabel position="stacked">Contact Phone</IonLabel>
-                        <IonInput value={form.contact_phone} onIonChange={e => setForm({ ...form, contact_phone: e.detail.value! })} />
+                      <IonItem>
+                        <IonLabel position="stacked">Contact Phone</IonLabel>
+                        <IonInput
+                          value={form.contact_phone}
+                          onIonChange={e => setForm({ ...form, contact_phone: e.detail.value ?? '' })}
+                        />
                       </IonItem>
-                      <IonItem><IonLabel position="stacked">Address</IonLabel>
-                        <IonInput value={form.client_address} onIonChange={e => setForm({ ...form, client_address: e.detail.value! })} />
+                      <IonItem>
+                        <IonLabel position="stacked">Address</IonLabel>
+                        <IonInput
+                          value={form.client_address}
+                          onIonChange={e => setForm({ ...form, client_address: e.detail.value ?? '' })}
+                        />
                       </IonItem>
-                      <IonButton expand="block" onClick={() => setSection(1)}>Next</IonButton>
+                      <IonButton expand="block" onClick={() => setSection(1)} disabled={!canGoNext0}>
+                        Next
+                      </IonButton>
                     </>
                   )}
 
                   {/* SECTION 1: Signage */}
                   {section === 1 && (
                     <>
-                      <IonItem><IonLabel position="stacked">Signage Type</IonLabel>
-                        <IonSelect value={form.signage_id} onIonChange={e => setForm({ ...form, signage_id: e.detail.value })}>
-                          {signages.map(s => <IonSelectOption key={s.signage_id} value={s.signage_id}>{s.name}</IonSelectOption>)}
+                      <IonItem>
+                        <IonLabel position="stacked">Signage Type</IonLabel>
+                        <IonSelect
+                          value={form.signage_id}
+                          onIonChange={e => setForm({ ...form, signage_id: e.detail.value })}
+                        >
+                          {signages.map(s => (
+                            <IonSelectOption key={s.signage_id} value={s.signage_id}>
+                              {s.name}
+                            </IonSelectOption>
+                          ))}
                         </IonSelect>
                       </IonItem>
-                      <IonItem><IonLabel position="stacked">Width (m)</IonLabel>
-                        <IonInput type="number" value={form.width} onIonChange={e => setForm({ ...form, width: parseFloat(e.detail.value!) || 0 })} />
+                      <IonItem>
+                        <IonLabel position="stacked">Width (m)</IonLabel>
+                        <IonInput
+                          type="number"
+                          value={form.width}
+                          onIonChange={e => setForm({ ...form, width: safeFloat(e.detail.value, 0) })}
+                        />
                       </IonItem>
-                      <IonItem><IonLabel position="stacked">Height (m)</IonLabel>
-                        <IonInput type="number" value={form.height} onIonChange={e => setForm({ ...form, height: parseFloat(e.detail.value!) || 0 })} />
+                      <IonItem>
+                        <IonLabel position="stacked">Height (m)</IonLabel>
+                        <IonInput
+                          type="number"
+                          value={form.height}
+                          onIonChange={e => setForm({ ...form, height: safeFloat(e.detail.value, 0) })}
+                        />
                       </IonItem>
-                      <IonItem><IonLabel position="stacked">Distance (km)</IonLabel>
-                        <IonInput type="number" value={form.distance_km} onIonChange={e => setForm({ ...form, distance_km: parseFloat(e.detail.value!) || 0 })} />
+                      <IonItem>
+                        <IonLabel position="stacked">Distance (km)</IonLabel>
+                        <IonInput
+                          type="number"
+                          value={form.distance_km}
+                          onIonChange={e => setForm({ ...form, distance_km: safeFloat(e.detail.value, 0) })}
+                        />
                       </IonItem>
-                      <IonButton expand="block" onClick={() => setSection(2)}>Next</IonButton>
-                      <IonButton expand="block" fill="clear" onClick={() => setSection(0)}>Back</IonButton>
+                      <IonButton expand="block" onClick={() => setSection(2)} disabled={!canGoNext1}>
+                        Next
+                      </IonButton>
+                      <IonButton expand="block" fill="clear" onClick={() => setSection(0)}>
+                        Back
+                      </IonButton>
                     </>
                   )}
 
@@ -187,9 +289,12 @@ const UserQuoteBuilder: React.FC = () => {
                       <IonList>
                         {addons.map(a => (
                           <IonItem key={a.addon_id}>
-                            <IonLabel>{a.name} <IonText color="medium">
-                              ({a.is_flat ? `R${a.flat_rate}` : `R${a.per_sqm_rate} per sqm`})
-                            </IonText></IonLabel>
+                            <IonLabel>
+                              {a.name}{' '}
+                              <IonText color="medium">
+                                ({a.is_flat ? `R${a.flat_rate}` : `R${a.per_sqm_rate} per sqm`})
+                              </IonText>
+                            </IonLabel>
                             <IonCheckbox
                               slot="end"
                               checked={form.addon_ids.includes(a.addon_id)}
@@ -205,30 +310,55 @@ const UserQuoteBuilder: React.FC = () => {
                       </IonList>
 
                       <IonCard>
-                        <IonCardHeader><IonCardTitle>Miscellaneous Items</IonCardTitle></IonCardHeader>
+                        <IonCardHeader>
+                          <IonCardTitle>Miscellaneous Items</IonCardTitle>
+                        </IonCardHeader>
                         <IonCardContent>
                           {form.misc_items.map((m, idx) => (
-                            <div key={idx}>
-                              <IonItem><IonLabel position="stacked">Item Name</IonLabel>
-                                <IonInput value={m.name} onIonChange={e => {
-                                  const updated = [...form.misc_items];
-                                  updated[idx].name = e.detail.value!;
-                                  setForm({ ...form, misc_items: updated });
-                                }} />
+                            <div key={idx} style={{ position: 'relative', paddingBottom: 8 }}>
+                              <IonButton
+                                size="small"
+                                fill="clear"
+                                color="medium"
+                                style={{ position: 'absolute', right: 0, top: -8 }}
+                                onClick={() => handleRemoveMiscItem(idx)}
+                              >
+                                <IonIcon icon={closeCircle} />
+                              </IonButton>
+                              <IonItem>
+                                <IonLabel position="stacked">Item Name</IonLabel>
+                                <IonInput
+                                  value={m.name}
+                                  onIonChange={e => {
+                                    const updated = [...form.misc_items];
+                                    updated[idx].name = e.detail.value ?? '';
+                                    setForm({ ...form, misc_items: updated });
+                                  }}
+                                />
                               </IonItem>
-                              <IonItem><IonLabel position="stacked">Quantity</IonLabel>
-                                <IonInput type="number" value={m.quantity} onIonChange={e => {
-                                  const updated = [...form.misc_items];
-                                  updated[idx].quantity = parseInt(e.detail.value!) || 1;
-                                  setForm({ ...form, misc_items: updated });
-                                }} />
+                              <IonItem>
+                                <IonLabel position="stacked">Quantity</IonLabel>
+                                <IonInput
+                                  type="number"
+                                  value={m.quantity}
+                                  onIonChange={e => {
+                                    const updated = [...form.misc_items];
+                                    updated[idx].quantity = safeInt(e.detail.value, 1) || 1;
+                                    setForm({ ...form, misc_items: updated });
+                                  }}
+                                />
                               </IonItem>
-                              <IonItem><IonLabel position="stacked">Unit Price</IonLabel>
-                                <IonInput type="number" value={m.unit_price} onIonChange={e => {
-                                  const updated = [...form.misc_items];
-                                  updated[idx].unit_price = parseFloat(e.detail.value!) || 0;
-                                  setForm({ ...form, misc_items: updated });
-                                }} />
+                              <IonItem>
+                                <IonLabel position="stacked">Unit Price</IonLabel>
+                                <IonInput
+                                  type="number"
+                                  value={m.unit_price}
+                                  onIonChange={e => {
+                                    const updated = [...form.misc_items];
+                                    updated[idx].unit_price = safeFloat(e.detail.value, 0);
+                                    setForm({ ...form, misc_items: updated });
+                                  }}
+                                />
                               </IonItem>
                             </div>
                           ))}
@@ -236,8 +366,12 @@ const UserQuoteBuilder: React.FC = () => {
                         </IonCardContent>
                       </IonCard>
 
-                      <IonButton expand="block" onClick={handleSubmit}>Submit & Preview</IonButton>
-                      <IonButton expand="block" fill="clear" onClick={() => setSection(1)}>Back</IonButton>
+                      <IonButton expand="block" onClick={handleSubmit} disabled={submitting}>
+                        {submitting ? 'Submitting…' : 'Submit & Preview'}
+                      </IonButton>
+                      <IonButton expand="block" fill="clear" onClick={() => setSection(1)}>
+                        Back
+                      </IonButton>
                     </>
                   )}
 
@@ -251,7 +385,12 @@ const UserQuoteBuilder: React.FC = () => {
             </IonCol>
           </IonRow>
         </IonGrid>
-        <IonToast isOpen={!!toastMsg} message={toastMsg} duration={3000} onDidDismiss={() => setToastMsg('')} />
+        <IonToast
+          isOpen={!!toastMsg}
+          message={toastMsg}
+          duration={3000}
+          onDidDismiss={() => setToastMsg('')}
+        />
       </IonContent>
     </IonPage>
   );
