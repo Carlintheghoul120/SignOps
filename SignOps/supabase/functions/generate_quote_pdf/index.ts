@@ -1,10 +1,8 @@
-// supabase/functions/generate_quote_pdf/index.ts
 import { serve } from "https://deno.land/std@0.203.0/http/server.ts";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.0/+esm";
 import { PDFDocument, rgb, StandardFonts } from "https://cdn.skypack.dev/pdf-lib";
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, {
       headers: {
@@ -24,14 +22,15 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: quote, error } = await supabase
-      .from("preview_quote")
-      .select("*")
-      .eq("quote_id", quoteId)
-      .maybeSingle();
+    // Use raw SQL to pull full quote details with addons & misc items
+    const { data, error } = await supabase.rpc("get_quote_details", { qid: quoteId });
 
-    if (error || !quote)
+    if (error || !data || data.length === 0) {
+      console.error("DB error:", error);
       return new Response(JSON.stringify({ error: "Quote not found" }), { status: 404 });
+    }
+
+    const quote = data[0];
 
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([600, 800]);
@@ -57,16 +56,14 @@ serve(async (req) => {
       const colWidth = (width - 2 * margin) / headers.length;
       const rowHeight = 20;
 
-      // Header
       headers.forEach((h, i) => {
-        page.drawText(h, { x: margin + i * colWidth + 2, y, size: 12, font: boldFont, color: rgb(0,0,0) });
+        page.drawText(h, { x: margin + i * colWidth + 2, y, size: 12, font: boldFont });
       });
       y -= rowHeight;
 
-      // Rows
       rows.forEach((row) => {
         row.forEach((cell, i) => {
-          page.drawText(cell, { x: margin + i * colWidth + 2, y, size: 12, font, color: rgb(0,0,0) });
+          page.drawText(cell, { x: margin + i * colWidth + 2, y, size: 12, font });
         });
         y -= rowHeight;
       });
@@ -74,7 +71,7 @@ serve(async (req) => {
     }
 
     // Header
-    drawText("Quotation / Invoice", 20, margin, y, true);
+    drawText("Quotation", 20, margin, y, true);
     y -= 20;
 
     // Client info
@@ -85,30 +82,35 @@ serve(async (req) => {
     drawText(`Address: ${quote.client_address}`);
     y -= 10;
 
-    // Line items
+    // Signage
     drawTable(
-      ["Signage", "Materials", "Cost"],
-      [[quote.signage_name, quote.material_names, `R${quote.signage_cost + quote.material_cost}`]]
+      ["Signage", "Cost"],
+      [[quote.signage_name ?? "N/A", `R${quote.signage_cost ?? 0}`]]
     );
 
     // Add-ons
-    if (quote.addons && quote.addons.length > 0) {
+    if (quote.addons?.length) {
       const addonRows = quote.addons.map((a: any) => [
-        a.name, "", `R${a.flat_rate ?? a.per_sqm_rate}`
+        a.name,
+        a.is_flat ? "Flat" : "Per sqm",
+        `R${a.flat_rate ?? a.per_sqm_rate ?? 0}`,
       ]);
-      drawTable(["Add-ons", "", "Cost"], addonRows);
+      drawTable(["Add-on", "Type", "Cost"], addonRows);
     }
 
     // Misc items
-    if (quote.misc_items && quote.misc_items.length > 0) {
+    if (quote.misc_items?.length) {
       const miscRows = quote.misc_items.map((m: any) => [
-        m.name, `x${m.quantity}`, `R${m.total}`
+        m.name,
+        `x${m.quantity}`,
+        `R${m.total}`,
       ]);
       drawTable(["Misc Item", "Qty", "Cost"], miscRows);
     }
 
-    // Total
-    drawText(`TOTAL: R${quote.grand_total}`, 16, margin, y, true);
+    // Totals
+    drawText(`Petrol Fee: R${quote.petrol_fee ?? 0}`);
+    drawText(`TOTAL: R${quote.grand_total ?? 0}`, 16, margin, y, true);
 
     const pdfBytes = await pdfDoc.save();
 
@@ -120,7 +122,7 @@ serve(async (req) => {
       },
     });
   } catch (err) {
-    console.error(err);
+    console.error("Server error:", err);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });
   }
 });
