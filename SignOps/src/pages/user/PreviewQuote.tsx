@@ -36,7 +36,6 @@ interface Quote {
   contact_phone: string;
   client_address: string;
   signage_name: string;
-  material_names: string;
   width: number;
   height: number;
   total_cost: number;
@@ -55,40 +54,40 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   useEffect(() => {
-    let retries = 0;
     const fetchQuote = async () => {
       try {
-        const { data, error } = await supabase
+        setLoading(true);
+
+        // 1️⃣ Fetch main quote
+        const { data: quoteData, error: qError } = await supabase
           .from("quotes")
-          .select(`
-            *,
-            addons:quote_addons (
-              name,
-              flat_rate,
-              per_sqm_rate
-            ),
-            misc_items:quote_misc_items (
-              name,
-              quantity,
-              unit_price,
-              total
-            )
-          `)
+          .select("*")
           .eq("quote_id", quoteId)
-          .maybeSingle();
+          .single();
+        if (qError || !quoteData) throw qError ?? new Error("Quote not found");
 
-        if (error) throw error;
-        if (!data && retries < 5) {
-          retries++;
-          setTimeout(fetchQuote, 1000);
-          return;
-        }
-        if (!data) {
-          setError("Quote not found");
-          return;
-        }
+        // 2️⃣ Fetch addons (join through quote_addons → addons)
+        const { data: addonRelations, error: aError } = await supabase
+          .from("quote_addons")
+          .select("addon_id, addons(name, flat_rate, per_sqm_rate, is_flat)")
+          .eq("quote_id", quoteId);
+        if (aError) throw aError;
 
-        setQuote(data);
+        const addons = addonRelations?.map(r => r.addons) ?? [];
+
+        // 3️⃣ Fetch misc items
+        const { data: miscItems, error: mError } = await supabase
+          .from("quote_misc_items")
+          .select("*")
+          .eq("quote_id", quoteId);
+        if (mError) throw mError;
+
+        // 4️⃣ Combine into single object
+        setQuote({
+          ...quoteData,
+          addons,
+          misc_items: miscItems ?? [],
+        });
       } catch (err: unknown) {
         console.error("❌ Error fetching quote:", err);
         setError(err instanceof Error ? err.message : "Failed to fetch quote");
@@ -107,7 +106,6 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
   const handleGeneratePDF = async () => {
     if (!quote) return;
     setPdfLoading(true);
-
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/generate_quote_pdf`, {
         method: "POST",
@@ -197,7 +195,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
             </>
           )}
 
-          {Array.isArray(quote.misc_items) && quote.misc_items.length > 0 && (
+          {quote.misc_items && quote.misc_items.length > 0 && (
             <>
               <h3>Misc Items:</h3>
               <ul>

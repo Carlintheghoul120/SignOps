@@ -84,7 +84,7 @@ serve(async (req) => {
 
     // Signage
     drawTable(
-      ["Signage", "Cost"],
+      ["Signage", "Base price per sqm (Excl. Materials)"],
       [[quote.signage_name ?? "N/A", `R${quote.signage_cost ?? 0}`]]
     );
 
