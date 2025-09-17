@@ -35,7 +35,7 @@ interface Quote {
   contact_email: string;
   contact_phone: string;
   client_address: string;
-  signage_name: string;
+  signage_name?: string;
   width: number;
   height: number;
   total_cost: number;
@@ -58,13 +58,19 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
       try {
         setLoading(true);
 
-        // 1️⃣ Fetch main quote
+        // 1️⃣ Fetch main quote + signage name via disambiguated foreign key
         const { data: quoteData, error: qError } = await supabase
           .from("quotes")
-          .select("*")
+          .select(`
+            *,
+            signage:signage_types!fk_quotes_signage(name)
+          `)
           .eq("quote_id", quoteId)
           .single();
         if (qError || !quoteData) throw qError ?? new Error("Quote not found");
+
+        // Map signage name
+        const signage_name = quoteData.signage?.name ?? "";
 
         // 2️⃣ Fetch addons (join through quote_addons → addons)
         const { data: addonRelations, error: aError } = await supabase
@@ -73,7 +79,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           .eq("quote_id", quoteId);
         if (aError) throw aError;
 
-        const addons = addonRelations?.map(r => r.addons) ?? [];
+        const addons = addonRelations?.map((r) => r.addons) ?? [];
 
         // 3️⃣ Fetch misc items
         const { data: miscItems, error: mError } = await supabase
@@ -85,6 +91,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         // 4️⃣ Combine into single object
         setQuote({
           ...quoteData,
+          signage_name,
           addons,
           misc_items: miscItems ?? [],
         });
