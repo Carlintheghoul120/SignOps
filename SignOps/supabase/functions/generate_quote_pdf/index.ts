@@ -22,17 +22,15 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Fetch quote details (RPC or raw select)
+    // Fetch quote details
     const { data, error } = await supabase.rpc("get_quote_details", { qid: quoteId });
-
     if (error || !data || data.length === 0) {
       console.error("DB error:", error);
       return new Response(JSON.stringify({ error: "Quote not found" }), { status: 404 });
     }
-
     const quote = data[0];
 
-    // Fetch user who generated the quote
+    // Fetch user
     let userName = "Unknown";
     if (quote.user_id) {
       const { data: userData } = await supabase
@@ -40,9 +38,18 @@ serve(async (req) => {
         .select("name")
         .eq("user_id", quote.user_id)
         .single();
-      if (userData) userName = userData.full_name;
+      if (userData) userName = userData.name;
     }
 
+    // Fetch logo from Supabase storage
+    const { data: logoData } = await supabase.storage.from("logo").download("icon.png");
+    let logoImage;
+    if (logoData) {
+      const logoBytes = await logoData.arrayBuffer();
+      logoImage = new Uint8Array(logoBytes);
+    }
+
+    // Create PDF
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([600, 800]);
     const { width, height } = page.getSize();
@@ -52,46 +59,96 @@ serve(async (req) => {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    function drawText(text: string, size = 12, offsetX = margin, offsetY = y, bold = false) {
+    function drawText(
+      text: string,
+      size = 12,
+      offsetX = margin,
+      offsetY = y,
+      bold = false,
+      color = rgb(0, 0, 0)
+    ) {
       page.drawText(text, {
         x: offsetX,
         y: offsetY,
         size,
         font: bold ? boldFont : font,
-        color: rgb(0, 0, 0),
+        color,
       });
-      y -= size + 5;
+      y -= size + 6;
     }
 
     function drawTable(headers: string[], rows: string[][]) {
       const colWidth = (width - 2 * margin) / headers.length;
-      const rowHeight = 20;
+      const rowHeight = 22;
+
+      // Header row background
+      page.drawRectangle({
+        x: margin,
+        y: y - 4,
+        width: width - 2 * margin,
+        height: rowHeight,
+        color: rgb(0.9, 0.9, 0.9),
+      });
 
       headers.forEach((h, i) => {
-        page.drawText(h, { x: margin + i * colWidth + 2, y, size: 12, font: boldFont });
+        page.drawText(h, {
+          x: margin + i * colWidth + 4,
+          y: y,
+          size: 12,
+          font: boldFont,
+          color: rgb(0, 0, 0.2),
+        });
       });
       y -= rowHeight;
 
-      rows.forEach((row) => {
+      rows.forEach((row, ri) => {
+        // Alternating row background
+        if (ri % 2 === 0) {
+          page.drawRectangle({
+            x: margin,
+            y: y - 4,
+            width: width - 2 * margin,
+            height: rowHeight,
+            color: rgb(0.96, 0.96, 0.96),
+          });
+        }
+
         row.forEach((cell, i) => {
-          page.drawText(cell, { x: margin + i * colWidth + 2, y, size: 12, font });
+          page.drawText(cell, {
+            x: margin + i * colWidth + 4,
+            y: y,
+            size: 11,
+            font,
+          });
         });
         y -= rowHeight;
       });
-      y -= 10;
+      y -= 12;
     }
 
-    // Header
-    drawText("Quotation", 20, margin, y, true);
+    // Insert logo (top-right)
+    if (logoImage) {
+      const pngLogo = await pdfDoc.embedPng(logoImage);
+      const logoDims = pngLogo.scale(0.15);
+      page.drawImage(pngLogo, {
+        x: width - logoDims.width - margin,
+        y: height - logoDims.height - margin,
+        width: logoDims.width,
+        height: logoDims.height,
+      });
+    }
+
+    // Title
+    drawText("QUOTATION", 24, margin, y, true, rgb(0.2, 0.2, 0.6));
     y -= 20;
 
-    // Client info
-    drawText(`Company: ${quote.company_name}`);
-    drawText(`Contact: ${quote.contact_name}`);
-    drawText(`Email: ${quote.contact_email}`);
-    drawText(`Phone: ${quote.contact_phone}`);
-    drawText(`Address: ${quote.client_address}`);
-    y -= 10;
+    // Client info block
+    drawText(`Company: ${quote.company_name}`, 12, margin, y);
+    drawText(`Contact: ${quote.contact_name}`, 12, margin, y);
+    drawText(`Email: ${quote.contact_email}`, 12, margin, y);
+    drawText(`Phone: ${quote.contact_phone}`, 12, margin, y);
+    drawText(`Address: ${quote.client_address}`, 12, margin, y);
+    y -= 15;
 
     // Signage info with dimensions
     drawTable(
@@ -99,7 +156,7 @@ serve(async (req) => {
       [[
         quote.signage_name ?? "N/A",
         `${quote.width ?? 0}m × ${quote.height ?? 0}m`,
-        `R${quote.signage_cost ?? 0}`
+        `R${quote.signage_cost ?? 0}`,
       ]]
     );
 
@@ -124,14 +181,22 @@ serve(async (req) => {
     }
 
     // Totals
-    drawText(`Petrol Fee: R${quote.petrol_fee ?? 0}`);
-    drawText(`TOTAL: R${quote.grand_total ?? 0}`, 16, margin, y, true);
-    y -= 20;
+    drawText(`Petrol Fee: R${quote.petrol_fee ?? 0}`, 12, margin, y, false, rgb(0.4, 0.4, 0.4));
+    drawText(`TOTAL: R${quote.grand_total ?? 0}`, 16, margin, y, true, rgb(0.1, 0.5, 0.1));
+    y -= 25;
 
-    // Footer with timestamp and generated by
+    // Footer
     const now = new Date();
-    drawText(`Generated by: ${userName}`, 10);
-    drawText(`Generated on: ${now.toLocaleString()}`, 10);
+    drawText(`Generated by: ${userName}`, 10, margin, 60, false, rgb(0.4, 0.4, 0.4));
+    drawText(`Generated on: ${now.toLocaleString()}`, 10, margin, 45, false, rgb(0.4, 0.4, 0.4));
+
+    // Line above footer
+    page.drawLine({
+      start: { x: margin, y: 80 },
+      end: { x: width - margin, y: 80 },
+      thickness: 1,
+      color: rgb(0.7, 0.7, 0.7),
+    });
 
     const pdfBytes = await pdfDoc.save();
 
@@ -140,8 +205,6 @@ serve(async (req) => {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename=quote-${quoteId}.pdf`,
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
       },
     });
   } catch (err) {
