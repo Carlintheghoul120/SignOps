@@ -1,429 +1,491 @@
-import React,{useEffect,useState} from "react";
+import React, { useEffect, useState } from "react";
 import {
-	IonPage,
-	IonHeader,
-	IonToolbar,
-	IonTitle,
-	IonContent,
-	IonButton,
-	IonList,
-	IonItem,
-	IonLabel,
-	IonInput,
-	IonModal,
-	IonToast,
-	IonSelect,
-	IonSelectOption,
-	IonAlert,
-	IonButtons,
-	IonMenuButton,
+  IonPage,
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonContent,
+  IonButton,
+  IonList,
+  IonItem,
+  IonLabel,
+  IonInput,
+  IonModal,
+  IonToast,
+  IonSelect,
+  IonSelectOption,
+  IonAlert,
+  IonButtons,
+  IonMenuButton,
 } from "@ionic/react";
-import {supabase} from "../../supbaseclient";
+import { supabase } from "../../supbaseclient.tsx";
 
 interface SignageType {
-	signage_id: string;
-	name: string;
-	description: string;
-	base_price_per_sqm: number;
+  signage_id: number;
+  name: string;
+  description: string;
+  base_price_per_sqm: number;
+  calculatedBasePrice?: number;
 }
 
 interface Material {
-	material_id: string;
-	name: string;
-	price_per_sqm: number;
+  material_id: number;
+  name: string;
+  price: number;
+  pricing_type: string; // e.g., "unit", "sqm"
 }
 
 interface LinkedMaterial extends Material {
-	quantity_required: number;
+  quantity_required: number;
 }
 
 export default function AdminSignage() {
-	const [signages,setSignages]=useState<SignageType[]>([]);
-	const [materials,setMaterials]=useState<Material[]>([]);
-	const [linkedMaterials,setLinkedMaterials]=useState<LinkedMaterial[]>([]);
-	const [selectedSignage,setSelectedSignage]=useState<Partial<SignageType>>({});
-	const [selectedMaterial,setSelectedMaterial]=useState<string>("");
-	const [materialQty,setMaterialQty]=useState<number>(1);
+  const [signages, setSignages] = useState<SignageType[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [linkedMaterials, setLinkedMaterials] = useState<LinkedMaterial[]>([]);
+  const [selectedSignage, setSelectedSignage] = useState<Partial<SignageType>>({});
+  const [selectedMaterial, setSelectedMaterial] = useState<number | "">("");
+  const [materialQty, setMaterialQty] = useState<number>(1);
 
-	const [showSignageModal,setShowSignageModal]=useState(false);
-	const [showMaterialModal,setShowMaterialModal]=useState(false);
-	const [newMaterial,setNewMaterial]=useState<Partial<Material>>({});
-	const [toastMessage,setToastMessage]=useState("");
+  const [showSignageModal, setShowSignageModal] = useState(false);
+  const [showMaterialModal, setShowMaterialModal] = useState(false);
+  const [newMaterial, setNewMaterial] = useState<Partial<Material>>({});
+  const [toastMessage, setToastMessage] = useState("");
 
-	// for editing material quantity
-	const [editMaterialId,setEditMaterialId]=useState<string|null>(null);
-	const [editQty,setEditQty]=useState<number>(1);
-	const [showEditAlert,setShowEditAlert]=useState(false);
+  const [editMaterialId, setEditMaterialId] = useState<number | null>(null);
+  const [editQty, setEditQty] = useState<number>(1);
+  const [showEditAlert, setShowEditAlert] = useState(false);
 
-	useEffect(() => {
-		fetchSignages();
-		fetchMaterials();
-	},[]);
+  useEffect(() => {
+    fetchSignages();
+    fetchMaterials();
+  }, []);
 
-	const fetchSignages=async () => {
-		const {data,error}=await supabase.from("signage_types").select("*");
-		if(!error&&data) setSignages(data);
-	};
+  const fetchSignages = async () => {
+    const { data: signagesData, error } = await supabase.from("signage_types").select("*");
+    if (error || !signagesData) return;
 
-	const fetchMaterials=async () => {
-		const {data,error}=await supabase.from("materials").select("*");
-		if(!error&&data) setMaterials(data);
-	};
+    const updatedSignages = await Promise.all(
+      signagesData.map(async (s: SignageType) => {
+        const { data: mats, error: matErr } = await supabase
+          .from("signage_materials")
+          .select(
+            `
+            quantity_required,
+            materials (
+              material_id,
+              name,
+              price,
+              pricing_type
+            )
+          `
+          )
+          .eq("signage_id", s.signage_id);
 
-	const fetchLinkedMaterials=async (signageId: string) => {
-		const {data,error}=await supabase
-			.from("signage_materials")
-			.select(
-				`
+        if (matErr || !mats || mats.length === 0) {
+          return { ...s, calculatedBasePrice: s.base_price_per_sqm };
+        }
+
+        const calcPrice = mats.reduce((sum: number, m: any) => {
+          let unitCost = m.materials.price || 0;
+          if (m.materials.pricing_type === "sqm") {
+            unitCost = (m.materials.price || 0) * 1; // default 1 sqm
+          }
+          return sum + unitCost * m.quantity_required;
+        }, 0);
+
+        return { ...s, calculatedBasePrice: calcPrice };
+      })
+    );
+
+    setSignages(updatedSignages);
+  };
+
+  const fetchMaterials = async () => {
+    const { data, error } = await supabase.from("materials").select("*");
+    if (!error && data) setMaterials(data);
+  };
+
+  const fetchLinkedMaterials = async (signageId: number) => {
+    const { data, error } = await supabase
+      .from("signage_materials")
+      .select(
+        `
         quantity_required,
         materials (
           material_id,
           name,
-          price_per_sqm
+          price,
+          pricing_type
         )
       `
-			)
-			.eq("signage_id",signageId);
+      )
+      .eq("signage_id", signageId);
 
-		if(!error&&data) {
-			const formatted=data.map((d: any) => ({
-				material_id: d.materials.material_id,
-				name: d.materials.name,
-				price_per_sqm: d.materials.price_per_sqm,
-				quantity_required: d.quantity_required,
-			}));
-			setLinkedMaterials(formatted);
-		}
-	};
+    if (!error && data) {
+      const formatted = data.map((d: any) => ({
+        material_id: d.materials.material_id,
+        name: d.materials.name,
+        price: d.materials.price,
+        pricing_type: d.materials.pricing_type,
+        quantity_required: d.quantity_required,
+      }));
+      setLinkedMaterials(formatted);
+    }
+  };
 
-	const handleSaveSignage=async () => {
-		if(!selectedSignage.name||!selectedSignage.base_price_per_sqm) {
-			setToastMessage("Name and price are required.");
-			return;
-		}
+  const handleSaveSignage = async () => {
+    if (!selectedSignage.name) {
+      setToastMessage("Name is required.");
+      return;
+    }
 
-		if(selectedSignage.signage_id) {
-			const {error}=await supabase
-				.from("signage_types")
-				.update({
-					name: selectedSignage.name,
-					description: selectedSignage.description,
-					base_price_per_sqm: selectedSignage.base_price_per_sqm,
-				})
-				.eq("signage_id",selectedSignage.signage_id);
+    if (selectedSignage.signage_id) {
+      const { error } = await supabase
+        .from("signage_types")
+        .update({
+          name: selectedSignage.name,
+          description: selectedSignage.description,
+        })
+        .eq("signage_id", selectedSignage.signage_id);
 
-			if(!error) setToastMessage("Signage updated.");
-		} else {
-			const {error}=await supabase.from("signage_types").insert({
-				name: selectedSignage.name,
-				description: selectedSignage.description,
-				base_price_per_sqm: selectedSignage.base_price_per_sqm,
-			});
-			if(!error) setToastMessage("Signage added.");
-		}
+      if (!error) setToastMessage("Signage updated.");
+    } else {
+      const { error } = await supabase.from("signage_types").insert({
+        name: selectedSignage.name,
+        description: selectedSignage.description,
+        base_price_per_sqm: selectedSignage.base_price_per_sqm || 0,
+      });
+      if (!error) setToastMessage("Signage added.");
+    }
 
-		setShowSignageModal(false);
-		setSelectedSignage({});
-		fetchSignages();
-	};
+    setShowSignageModal(false);
+    setSelectedSignage({});
+    setLinkedMaterials([]);
+    fetchSignages();
+  };
 
-	const handleDeleteSignage=async (id: string) => {
-		const {error}=await supabase.from("signage_types").delete().eq("signage_id",id);
-		if(!error) {
-			setToastMessage("Signage deleted.");
-			fetchSignages();
-		}
-	};
+  const handleDeleteSignage = async (id: number) => {
+    const { error } = await supabase.from("signage_types").delete().eq("signage_id", id);
+    if (!error) {
+      setToastMessage("Signage deleted.");
+      fetchSignages();
+    }
+  };
 
-	const handleAddMaterialToSignage=async () => {
-		if(!selectedSignage.signage_id||!selectedMaterial||!materialQty) {
-			setToastMessage("Select signage, material, and quantity.");
-			return;
-		}
+  const handleAddMaterialToSignage = async () => {
+    if (!selectedSignage.signage_id || !selectedMaterial || materialQty <= 0) {
+      setToastMessage("Select signage, material, and a positive quantity.");
+      return;
+    }
 
-		const {error}=await supabase.from("signage_materials").insert({
-			signage_id: selectedSignage.signage_id,
-			material_id: selectedMaterial,
-			quantity_required: materialQty,
-		});
+    const { error } = await supabase.from("signage_materials").insert({
+      signage_id: selectedSignage.signage_id,
+      material_id: selectedMaterial,
+      quantity_required: materialQty,
+    });
 
-		if(!error) {
-			setToastMessage("Material linked to signage.");
-			setSelectedMaterial("");
-			setMaterialQty(1);
-			fetchLinkedMaterials(selectedSignage.signage_id);
-		}
-	};
+    if (!error) {
+      setToastMessage("Material linked to signage.");
+      setSelectedMaterial("");
+      setMaterialQty(1);
+      fetchLinkedMaterials(selectedSignage.signage_id);
+      fetchSignages();
+    }
+  };
 
-	const handleRemoveMaterial=async (materialId: string) => {
-		if(!selectedSignage.signage_id) return;
+  const handleRemoveMaterial = async (materialId: number) => {
+    if (!selectedSignage.signage_id) return;
 
-		const {error}=await supabase
-			.from("signage_materials")
-			.delete()
-			.eq("signage_id",selectedSignage.signage_id)
-			.eq("material_id",materialId);
+    const { error } = await supabase
+      .from("signage_materials")
+      .delete()
+      .eq("signage_id", selectedSignage.signage_id)
+      .eq("material_id", materialId);
 
-		if(!error) {
-			setToastMessage("Material removed.");
-			fetchLinkedMaterials(selectedSignage.signage_id);
-		}
-	};
+    if (!error) {
+      setToastMessage("Material removed.");
+      fetchLinkedMaterials(selectedSignage.signage_id);
+      fetchSignages();
+    }
+  };
 
-	const handleUpdateMaterialQty=async () => {
-		if(!selectedSignage.signage_id||!editMaterialId) return;
+  const handleUpdateMaterialQty = async () => {
+    if (!selectedSignage.signage_id || !editMaterialId) return;
 
-		const {error}=await supabase
-			.from("signage_materials")
-			.update({quantity_required: editQty})
-			.eq("signage_id",selectedSignage.signage_id)
-			.eq("material_id",editMaterialId);
+    const { error } = await supabase
+      .from("signage_materials")
+      .update({ quantity_required: editQty })
+      .eq("signage_id", selectedSignage.signage_id)
+      .eq("material_id", editMaterialId);
 
-		if(!error) {
-			setToastMessage("Material quantity updated.");
-			fetchLinkedMaterials(selectedSignage.signage_id);
-			setShowEditAlert(false);
-			setEditMaterialId(null);
-		}
-	};
+    if (!error) {
+      setToastMessage("Material quantity updated.");
+      fetchLinkedMaterials(selectedSignage.signage_id);
+      fetchSignages();
+      setShowEditAlert(false);
+      setEditMaterialId(null);
+    }
+  };
 
-	const handleAddMaterial=async () => {
-		if(!newMaterial.name||!newMaterial.price_per_sqm) {
-			setToastMessage("Material name & price are required.");
-			return;
-		}
+  const handleAddMaterial = async () => {
+    if (!newMaterial.name || !newMaterial.price) {
+      setToastMessage("Material name & price are required.");
+      return;
+    }
 
-		const {error}=await supabase.from("materials").insert({
-			name: newMaterial.name,
-			price_per_sqm: newMaterial.price_per_sqm,
-		});
+    const { error } = await supabase.from("materials").insert({
+      name: newMaterial.name,
+      price: newMaterial.price,
+      pricing_type: newMaterial.pricing_type || "unit",
+    });
 
-		if(!error) {
-			setToastMessage("Material added.");
-			fetchMaterials();
-			setShowMaterialModal(false);
-			setNewMaterial({});
-		}
-	};
+    if (!error) {
+      setToastMessage("Material added.");
+      fetchMaterials();
+      setShowMaterialModal(false);
+      setNewMaterial({});
+    }
+  };
 
-	return (
-		<IonPage>
-			<IonHeader>
-				<IonToolbar color="primary">
-					<IonButtons slot="start">
-						<IonMenuButton />
-					</IonButtons>
-					<IonTitle className="ion-text-center">Signage Types</IonTitle>
-				</IonToolbar>
-			</IonHeader>
+  useEffect(() => {
+    if (!showSignageModal) {
+      setSelectedSignage({});
+      setLinkedMaterials([]);
+    }
+  }, [showSignageModal]);
 
-			<IonContent className="ion-padding">
-				<IonButton expand="block" onClick={() => setShowSignageModal(true)}>
-					+ Add Signage
-				</IonButton>
+  useEffect(() => {
+    if (!showMaterialModal) setNewMaterial({});
+  }, [showMaterialModal]);
 
-				<IonList>
-					{signages.map((s) => (
-						<IonItem key={s.signage_id}>
-							<IonLabel>
-								<h2>{s.name}</h2>
-								<p>{s.description}</p>
-								<p>Base Price: R{s.base_price_per_sqm}</p>
-							</IonLabel>
-							<IonButton
-								size="small"
-								onClick={() => {
-									setSelectedSignage(s);
-									fetchLinkedMaterials(s.signage_id);
-									setShowSignageModal(true);
-								}}
-							>
-								Edit
-							</IonButton>
-							<IonButton color="danger" size="small" onClick={() => handleDeleteSignage(s.signage_id)}>
-								Delete
-							</IonButton>
-						</IonItem>
-					))}
-				</IonList>
+  return (
+    <IonPage>
+      <IonHeader>
+        <IonToolbar color="primary">
+          <IonButtons slot="start">
+            <IonMenuButton />
+          </IonButtons>
+          <IonTitle className="ion-text-center">Signage Types</IonTitle>
+        </IonToolbar>
+      </IonHeader>
 
-				{/* Signage Modal */}
-				<IonModal isOpen={showSignageModal} onDidDismiss={() => setShowSignageModal(false)}>
-					<IonHeader>
-						<IonToolbar>
-							<IonTitle>{selectedSignage.signage_id? "Edit Signage":"Add Signage"}</IonTitle>
-						</IonToolbar>
-					</IonHeader>
-					<IonContent className="ion-padding">
-						<IonInput
-							placeholder="Name"
-							value={selectedSignage.name||""}
-							onIonChange={(e) => setSelectedSignage({...selectedSignage,name: e.detail.value!})}
-						/>
-						<IonInput
-							placeholder="Description"
-							value={selectedSignage.description||""}
-							onIonChange={(e) => setSelectedSignage({...selectedSignage,description: e.detail.value!})}
-						/>
-						<IonInput
-							type="number"
-							placeholder="Base Price per sqm"
-							value={selectedSignage.base_price_per_sqm||""}
-							onIonChange={(e) =>
-								setSelectedSignage({
-									...selectedSignage,
-									base_price_per_sqm: parseFloat(e.detail.value!)||0,
-								})
-							}
-						/>
+      <IonContent className="ion-padding">
+        <IonButton expand="block" onClick={() => setShowSignageModal(true)}>
+          + Add Signage
+        </IonButton>
 
-						{/* Linked Materials */}
-						{selectedSignage.signage_id&&(
-							<>
-								<h3>Linked Materials</h3>
-								<IonList>
-									{linkedMaterials.length>0? (
-										linkedMaterials.map((m) => (
-											<IonItem key={m.material_id}>
-												<IonLabel>
-													{m.name} (R{m.price_per_sqm}) - Qty: {m.quantity_required}
-												</IonLabel>
-												<IonButton
-													color="primary"
-													size="small"
-													onClick={() => {
-														setEditMaterialId(m.material_id);
-														setEditQty(m.quantity_required);
-														setShowEditAlert(true);
-													}}
-												>
-													Edit
-												</IonButton>
-												<IonButton
-													color="danger"
-													size="small"
-													onClick={() => handleRemoveMaterial(m.material_id)}
-												>
-													Remove
-												</IonButton>
-											</IonItem>
-										))
-									):(
-										<IonItem>
-											<IonLabel>No materials linked yet.</IonLabel>
-										</IonItem>
-									)}
-								</IonList>
+        <IonList>
+          {signages.map((s) => (
+            <IonItem key={s.signage_id}>
+              <IonLabel>
+                <h2>{s.name}</h2>
+                <p>{s.description}</p>
+                <p>
+                  Base Price: R
+                  {(s.calculatedBasePrice ?? s.base_price_per_sqm).toFixed(2)}
+                </p>
+              </IonLabel>
+              <IonButton
+                size="small"
+                onClick={() => {
+                  setSelectedSignage(s);
+                  fetchLinkedMaterials(s.signage_id);
+                  setShowSignageModal(true);
+                }}
+              >
+                Edit
+              </IonButton>
+              <IonButton
+                color="danger"
+                size="small"
+                onClick={() => handleDeleteSignage(s.signage_id)}
+              >
+                Delete
+              </IonButton>
+            </IonItem>
+          ))}
+        </IonList>
 
-								{/* Add Materials */}
-								<IonSelect
-									value={selectedMaterial}
-									placeholder="Select Material"
-									onIonChange={(e) => setSelectedMaterial(e.detail.value)}
-								>
-									{materials.map((m) => (
-										<IonSelectOption key={m.material_id} value={m.material_id}>
-											{m.name} (R{m.price_per_sqm})
-										</IonSelectOption>
-									))}
-								</IonSelect>
+        {/* Signage Modal */}
+        <IonModal isOpen={showSignageModal} onDidDismiss={() => setShowSignageModal(false)}>
+          <IonHeader>
+            <IonToolbar>
+              <IonTitle>{selectedSignage.signage_id ? "Edit Signage" : "Add Signage"}</IonTitle>
+            </IonToolbar>
+          </IonHeader>
+          <IonContent className="ion-padding">
+            <IonInput
+              placeholder="Name"
+              value={selectedSignage.name || ""}
+              onIonChange={(e) => setSelectedSignage({ ...selectedSignage, name: e.detail.value! })}
+            />
+            <IonInput
+              placeholder="Description"
+              value={selectedSignage.description || ""}
+              onIonChange={(e) =>
+                setSelectedSignage({ ...selectedSignage, description: e.detail.value! })
+              }
+            />
 
-								<IonInput
-									type="number"
-									placeholder="Quantity"
-									value={materialQty}
-									onIonChange={(e) => setMaterialQty(parseInt(e.detail.value!)||1)}
-								/>
+            {/* Linked Materials */}
+            {selectedSignage.signage_id && (
+              <>
+                <h3>Linked Materials</h3>
+                <IonList>
+                  {linkedMaterials.length > 0 ? (
+                    linkedMaterials.map((m) => (
+                      <IonItem key={m.material_id}>
+                        <IonLabel>
+                          {m.name} (R{m.price}) - Qty: {m.quantity_required}
+                        </IonLabel>
+                        <IonButton
+                          color="primary"
+                          size="small"
+                          onClick={() => {
+                            setEditMaterialId(m.material_id);
+                            setEditQty(m.quantity_required);
+                            setShowEditAlert(true);
+                          }}
+                        >
+                          Edit
+                        </IonButton>
+                        <IonButton
+                          color="danger"
+                          size="small"
+                          onClick={() => handleRemoveMaterial(m.material_id)}
+                        >
+                          Remove
+                        </IonButton>
+                      </IonItem>
+                    ))
+                  ) : (
+                    <IonItem>
+                      <IonLabel>No materials linked yet.</IonLabel>
+                    </IonItem>
+                  )}
+                </IonList>
 
-								<IonButton expand="block" onClick={handleAddMaterialToSignage}>
-									Link Material
-								</IonButton>
+                {/* Add Materials */}
+                <IonSelect
+                  value={selectedMaterial}
+                  placeholder="Select Material"
+                  onIonChange={(e) => setSelectedMaterial(e.detail.value)}
+                >
+                  {materials.map((m) => (
+                    <IonSelectOption key={m.material_id} value={m.material_id}>
+                      {m.name} (R{m.price})
+                    </IonSelectOption>
+                  ))}
+                </IonSelect>
 
-								<IonButton expand="block" color="secondary" onClick={() => setShowMaterialModal(true)}>
-									+ Add New Material
-								</IonButton>
-							</>
-						)}
+                <IonInput
+                  type="number"
+                  placeholder="Quantity"
+                  value={materialQty}
+                  onIonChange={(e) => setMaterialQty(parseInt(e.detail.value!) || 1)}
+                />
 
-						<IonButton expand="full" onClick={handleSaveSignage}>
-							Save
-						</IonButton>
-						<IonButton expand="full" color="light" onClick={() => setShowSignageModal(false)}>
-							Cancel
-						</IonButton>
-					</IonContent>
-				</IonModal>
+                <IonButton expand="block" onClick={handleAddMaterialToSignage}>
+                  Link Material
+                </IonButton>
 
-				{/* Edit Quantity Alert */}
-				<IonAlert
-					isOpen={showEditAlert}
-					onDidDismiss={() => setShowEditAlert(false)}
-					header="Edit Quantity"
-					inputs={[
-						{
-							name: "quantity",
-							type: "number",
-							value: editQty,
-							placeholder: "Enter new quantity",
-						},
-					]}
-					buttons={[
-						{
-							text: "Cancel",
-							role: "cancel",
-							handler: () => {
-								setShowEditAlert(false);
-								setEditMaterialId(null);
-							},
-						},
-						{
-							text: "Save",
-							handler: (data) => {
-								const qty=parseInt(data.quantity)||1;
-								setEditQty(qty);
-								handleUpdateMaterialQty();
-							},
-						},
-					]}
-				/>
+                <IonButton expand="block" color="secondary" onClick={() => setShowMaterialModal(true)}>
+                  + Add New Material
+                </IonButton>
+              </>
+            )}
 
-				{/* New Material Modal */}
-				<IonModal isOpen={showMaterialModal} onDidDismiss={() => setShowMaterialModal(false)}>
-					<IonHeader>
-						<IonToolbar>
-							<IonTitle>Add Material</IonTitle>
-						</IonToolbar>
-					</IonHeader>
-					<IonContent className="ion-padding">
-						<IonInput
-							placeholder="Material Name"
-							value={newMaterial.name||""}
-							onIonChange={(e) => setNewMaterial({...newMaterial,name: e.detail.value!})}
-						/>
-						<IonInput
-							placeholder="Price per sqm"
-							type="number"
-							value={newMaterial.price_per_sqm||""}
-							onIonChange={(e) =>
-								setNewMaterial({...newMaterial,price_per_sqm: parseFloat(e.detail.value!)||0})
-							}
-						/>
-						<IonButton expand="full" onClick={handleAddMaterial}>
-							Save
-						</IonButton>
-						<IonButton expand="full" color="light" onClick={() => setShowMaterialModal(false)}>
-							Cancel
-						</IonButton>
-					</IonContent>
-				</IonModal>
+            <IonButton expand="full" onClick={handleSaveSignage}>
+              Save
+            </IonButton>
+            <IonButton expand="full" color="light" onClick={() => setShowSignageModal(false)}>
+              Cancel
+            </IonButton>
+          </IonContent>
+        </IonModal>
 
-				<IonToast
-					isOpen={!!toastMessage}
-					message={toastMessage}
-					duration={2000}
-					onDidDismiss={() => setToastMessage("")}
-				/>
-			</IonContent>
-		</IonPage>
-	);
+        {/* Edit Quantity Alert */}
+        <IonAlert
+          isOpen={showEditAlert}
+          onDidDismiss={() => setShowEditAlert(false)}
+          header="Edit Quantity"
+          inputs={[
+            {
+              name: "quantity",
+              type: "number",
+              value: editQty,
+              placeholder: "Enter new quantity",
+            },
+          ]}
+          buttons={[
+            {
+              text: "Cancel",
+              role: "cancel",
+              handler: () => {
+                setShowEditAlert(false);
+                setEditMaterialId(null);
+              },
+            },
+            {
+              text: "Save",
+              handler: (data) => {
+                const qty = parseInt(data.quantity) || 1;
+                setEditQty(qty);
+                handleUpdateMaterialQty();
+              },
+            },
+          ]}
+        />
+
+        {/* New Material Modal */}
+        <IonModal isOpen={showMaterialModal} onDidDismiss={() => setShowMaterialModal(false)}>
+          <IonHeader>
+            <IonToolbar>
+              <IonTitle>Add Material</IonTitle>
+            </IonToolbar>
+          </IonHeader>
+          <IonContent className="ion-padding">
+            <IonInput
+              placeholder="Material Name"
+              value={newMaterial.name || ""}
+              onIonChange={(e) => setNewMaterial({ ...newMaterial, name: e.detail.value! })}
+            />
+            <IonInput
+              placeholder="Price"
+              type="number"
+              value={newMaterial.price || ""}
+              onIonChange={(e) =>
+                setNewMaterial({ ...newMaterial, price: parseFloat(e.detail.value!) || 0 })
+              }
+            />
+            <IonSelect
+              value={newMaterial.pricing_type || "unit"}
+              placeholder="Select Pricing Type"
+              onIonChange={(e) =>
+                setNewMaterial({ ...newMaterial, pricing_type: e.detail.value! })
+              }
+            >
+              <IonSelectOption value="unit">Per Unit</IonSelectOption>
+              <IonSelectOption value="sqm">Per SQM</IonSelectOption>
+            </IonSelect>
+
+            <IonButton expand="full" onClick={handleAddMaterial}>
+              Save
+            </IonButton>
+            <IonButton expand="full" color="light" onClick={() => setShowMaterialModal(false)}>
+              Cancel
+            </IonButton>
+          </IonContent>
+        </IonModal>
+
+        <IonToast
+          isOpen={!!toastMessage}
+          message={toastMessage}
+          duration={2000}
+          onDidDismiss={() => setToastMessage("")}
+        />
+      </IonContent>
+    </IonPage>
+  );
 }
