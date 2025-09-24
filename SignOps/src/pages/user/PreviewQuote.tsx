@@ -19,6 +19,7 @@ interface Addon {
   name: string;
   flat_rate?: number;
   per_sqm_rate?: number;
+  is_flat?: boolean;
 }
 
 interface MiscItem {
@@ -38,9 +39,15 @@ interface Quote {
   signage_name?: string;
   width: number;
   height: number;
+  area: number;
+  signage_cost: number;
+  material_cost: number;
+  addon_cost: number;
+  misc_cost: number;
+  petrol_fee?: number;
   total_cost: number;
-  addons?: Addon[];
-  misc_items?: MiscItem[];
+  addons: Addon[];
+  misc_items: MiscItem[];
 }
 
 const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
@@ -58,43 +65,16 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
       try {
         setLoading(true);
 
-        // 1️⃣ Fetch main quote + signage name via disambiguated foreign key
-        const { data: quoteData, error: qError } = await supabase
-          .from("quotes")
-          .select(`
-            *,
-            signage:signage_types!fk_quotes_signage(name)
-          `)
+        // Pull from view (handles all joins + trigger logic)
+        const { data, error } = await supabase
+          .from("preview_quote")
+          .select("*")
           .eq("quote_id", quoteId)
           .single();
-        if (qError || !quoteData) throw qError ?? new Error("Quote not found");
 
-        // Map signage name
-        const signage_name = quoteData.signage?.name ?? "";
+        if (error || !data) throw error ?? new Error("Quote not found");
 
-        // 2️⃣ Fetch addons (join through quote_addons → addons)
-        const { data: addonRelations, error: aError } = await supabase
-          .from("quote_addons")
-          .select("addon_id, addons(name, flat_rate, per_sqm_rate, is_flat)")
-          .eq("quote_id", quoteId);
-        if (aError) throw aError;
-
-        const addons = addonRelations?.map((r) => r.addons) ?? [];
-
-        // 3️⃣ Fetch misc items
-        const { data: miscItems, error: mError } = await supabase
-          .from("quote_misc_items")
-          .select("*")
-          .eq("quote_id", quoteId);
-        if (mError) throw mError;
-
-        // 4️⃣ Combine into single object
-        setQuote({
-          ...quoteData,
-          signage_name,
-          addons,
-          misc_items: miscItems ?? [],
-        });
+        setQuote(data as Quote);
       } catch (err: unknown) {
         console.error("❌ Error fetching quote:", err);
         setError(err instanceof Error ? err.message : "Failed to fetch quote");
@@ -189,25 +169,39 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           <p><strong>Address:</strong> {quote.client_address}</p>
           <p><strong>Signage:</strong> {quote.signage_name}</p>
           <p><strong>Dimensions:</strong> {quote.width}m × {quote.height}m</p>
+
+          <h3>Breakdown:</h3>
+          <ul>
+            <li>Signage: R{quote.signage_cost}</li>
+            <li>Materials: R{quote.material_cost}</li>
+            <li>Add-ons: R{quote.addon_cost}</li>
+            <li>Misc: R{quote.misc_cost}</li>
+            <li>Petrol Fee: R{quote.petrol_fee ?? 0}</li>
+          </ul>
+
           <p><strong>Total Cost:</strong> R{quote.total_cost}</p>
 
-          {quote.addons && quote.addons.length > 0 && (
+          {quote.addons?.length > 0 && (
             <>
               <h3>Add-ons:</h3>
               <ul>
                 {quote.addons.map((a, idx) => (
-                  <li key={idx}>{a.name} – R{a.flat_rate ?? a.per_sqm_rate}</li>
+                  <li key={idx}>
+                    {a.name} – {a.is_flat ? `R${a.flat_rate}` : `R${a.per_sqm_rate}/sqm`}
+                  </li>
                 ))}
               </ul>
             </>
           )}
 
-          {quote.misc_items && quote.misc_items.length > 0 && (
+          {quote.misc_items?.length > 0 && (
             <>
               <h3>Misc Items:</h3>
               <ul>
                 {quote.misc_items.map((m, idx) => (
-                  <li key={idx}>{m.name} (x{m.quantity}) – R{m.unit_price} each = R{m.total}</li>
+                  <li key={idx}>
+                    {m.name} (x{m.quantity}) – R{m.unit_price} each = R{m.total}
+                  </li>
                 ))}
               </ul>
             </>
