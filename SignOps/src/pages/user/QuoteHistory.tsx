@@ -16,6 +16,8 @@ import {
   IonLabel,
   IonRow,
   IonCol,
+  IonButtons,
+  IonMenuButton,
 } from "@ionic/react";
 import { supabase } from "../../supbaseclient.tsx";
 
@@ -24,7 +26,7 @@ interface Quote {
   user_id: string;
   user_name?: string;
   signage_id: string;
-  total_cost?: string;
+  total_cost?: string | undefined;
   signage_name?: string;
   created_at: string;
   [key: string]: string | undefined;
@@ -63,9 +65,11 @@ export const QuoteHistory: React.FC = () => {
     }
   };
 
+
   useEffect(() => {
     fetchQuotes();
   }, []);
+
 
   const handleGeneratePDF = async (quoteId: string) => {
     setPdfLoading(true);
@@ -108,7 +112,10 @@ export const QuoteHistory: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar>
+			<IonToolbar color="primary">
+					  <IonButtons slot="start">
+						<IonMenuButton />
+					  </IonButtons>
           <IonTitle>Quote History</IonTitle>
         </IonToolbar>
       </IonHeader>
