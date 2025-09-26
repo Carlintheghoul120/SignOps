@@ -12,6 +12,9 @@ import {
   IonLabel,
   IonSelect,
   IonSelectOption,
+  IonGrid,
+  IonRow,
+  IonCol,
   IonCard,
   IonCardHeader,
   IonCardTitle,
@@ -45,6 +48,7 @@ interface JobTask {
   assignee_id: string | null;
   is_completed: boolean;
   job_card_subtasks: Subtask[];
+  job_card_id: string;
 }
 
 interface JobCard {
@@ -64,8 +68,6 @@ const TaskBoard: React.FC = () => {
     done: [],
   });
 
-  const [statusFilter, setStatusFilter] = useState<ColumnKey>("todo");
-
   const [showModal, setShowModal] = useState(false);
   const [jobName, setJobName] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
@@ -77,61 +79,171 @@ const TaskBoard: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<{ user_id: string; is_admin: boolean } | null>(null);
 
-  // ✅ Fetch Current User
-  useEffect(() => {
-    const fetchCurrentUser = async () => {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData?.user) return;
-      const { data } = await supabase
-        .from("users")
-        .select("user_id, is_admin")
-        .eq("user_id", userData.user.id)
-        .single();
-      if (data) setCurrentUser({ user_id: data.user_id, is_admin: data.is_admin });
-    };
-    fetchCurrentUser();
-  }, []);
+  // -------- Fetch current user --------
+  const fetchCurrentUser = async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) return;
 
-  // ✅ Fetch Job Cards
+    const { data } = await supabase.from("users").select("user_id, is_admin").eq("user_id", userData.user.id).single();
+    if (data) setCurrentUser({ user_id: data.user_id, is_admin: data.is_admin });
+  };
+
   const fetchJobCards = async () => {
     if (!currentUser) return;
-    let query = supabase.from("job_cards").select(
-      `
-      id, name, status, user_id, quote_id,
-      job_card_tasks(
-        id, title, description, is_completed, assignee_id,
-        job_card_subtasks(id, title, is_completed)
-      )
-    `
-    );
 
-    if (!currentUser.is_admin) query = query.eq("user_id", currentUser.user_id);
+    let query = supabase
+      .from("job_cards")
+      .select(`
+        id, name, status, user_id, quote_id,
+        job_card_tasks(
+          id, title, description, is_completed, assignee_id, job_card_id,
+          job_card_subtasks(id, title, is_completed)
+        )
+      `)
+      .order("created_at", { ascending: false });
+
+    if (!currentUser.is_admin) {
+      query = query.eq("user_id", currentUser.user_id);
+    }
+
     const { data, error } = await query;
     if (error) return console.error(error);
 
     const grouped: Record<ColumnKey, JobCard[]> = { todo: [], in_progress: [], done: [] };
+
     data.forEach((jc: any) => {
       const tasks: JobTask[] = (jc.job_card_tasks || []).map((t: any) => ({
         ...t,
         job_card_subtasks: t.job_card_subtasks || [],
       }));
-      const status = ["todo", "in_progress", "done"].includes(jc.status)
-        ? (jc.status as ColumnKey)
-        : "todo";
+
+      const status: ColumnKey = ["todo", "in_progress", "done"].includes(jc.status) ? (jc.status as ColumnKey) : "todo";
       grouped[status].push({ ...jc, job_card_tasks: tasks });
     });
+
     setColumns(grouped);
   };
 
+  const fetchTemplates = async () => {
+    const { data } = await supabase.from("task_templates").select("id, name").order("created_at");
+    if (data) setTemplates(data);
+  };
+
+  const fetchQuotes = async () => {
+    if (!currentUser) return;
+
+    let query = supabase.from("quotes").select("quote_id, contact_name, signage_id");
+    if (!currentUser.is_admin) query = query.eq("user_id", currentUser.user_id);
+
+    const { data: quoteData, error } = await query;
+    if (error || !quoteData) return;
+
+    const signageIds = quoteData.map((q: any) => q.signage_id).filter(Boolean);
+    let signageMap: Record<number, string> = {};
+    if (signageIds.length) {
+      const { data: signageData } = await supabase.from("signage_types").select("signage_id, name").in("signage_id", signageIds);
+      if (signageData) signageMap = Object.fromEntries(signageData.map((s: any) => [s.signage_id, s.name]));
+    }
+
+    const mapped = quoteData.map((q: any) => ({
+      id: q.quote_id,
+      label: `${signageMap[q.signage_id] || "Unknown"} (Contact: ${q.contact_name})`,
+    }));
+
+    setQuotes(mapped);
+  };
+
+  const fetchUsers = async () => {
+    const { data } = await supabase.from("users").select("user_id, name").order("name");
+    if (data) setUsers(data);
+  };
+
+  useEffect(() => {
+    fetchCurrentUser();
+  }, []);
+
   useEffect(() => {
     if (!currentUser) return;
-    fetchJobCards();
+
+    const fetchAll = async () => {
+      await fetchJobCards();
+      await fetchTemplates();
+      await fetchQuotes();
+      await fetchUsers();
+    };
+
+    fetchAll();
+
     const channel = supabase
       .channel("jobcards")
-      .on("postgres_changes", { event: "*", schema: "public", table: "job_cards" }, fetchJobCards)
+      .on("postgres_changes", { event: "*", schema: "public", table: "job_cards" }, () => void fetchJobCards())
       .subscribe();
-    return () => supabase.removeChannel(channel);
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentUser]);
+
+  // -------- Toggle task completion --------
+  const toggleTaskCompletion = async (task: JobTask, parentJobCard: JobCard) => {
+    await supabase
+      .from("job_card_tasks")
+      .update({ is_completed: !task.is_completed })
+      .eq("id", task.id);
+
+    // Update local state
+    const updatedColumns = { ...columns };
+    const column = updatedColumns[parentJobCard.status];
+    const jcIndex = column.findIndex((jc) => jc.id === parentJobCard.id);
+    if (jcIndex >= 0) {
+      const taskIndex = column[jcIndex].job_card_tasks.findIndex((t) => t.id === task.id);
+      if (taskIndex >= 0) {
+        column[jcIndex].job_card_tasks[taskIndex].is_completed = !task.is_completed;
+      }
+    }
+    setColumns(updatedColumns);
+
+    // Update job card status
+    await updateJobCardStatus(parentJobCard);
+  };
+
+  const updateJobCardStatus = async (jobCard: JobCard) => {
+    const allTasks = jobCard.job_card_tasks;
+    let newStatus: ColumnKey = "todo";
+
+    if (allTasks.every((t) => t.is_completed)) newStatus = "done";
+    else if (allTasks.some((t) => t.is_completed)) newStatus = "in_progress";
+
+    if (newStatus !== jobCard.status) {
+      const { error } = await supabase
+        .from("job_cards")
+        .update({ status: newStatus })
+        .eq("id", jobCard.id);
+      if (error) console.error(error);
+      fetchJobCards(); // refresh board
+    }
+  };
+
+  // -------- Create Job Card --------
+  const createJobCard = async () => {
+    if (!selectedTemplate || !jobQuoteId || !jobUserId) return;
+
+    const { error } = await supabase.rpc("generate_job_card_from_template", {
+      p_template_id: selectedTemplate,
+      p_quote_id: jobQuoteId,
+      p_user_id: jobUserId,
+      p_name: jobName || null,
+    });
+
+    if (!error) {
+      setShowModal(false);
+      setJobName("");
+      setSelectedTemplate(null);
+      setJobQuoteId(null);
+      setJobUserId(null);
+      fetchJobCards();
+    } else console.error(error);
+  };
 
   return (
     <IonPage>
@@ -140,7 +252,7 @@ const TaskBoard: React.FC = () => {
           <IonButtons slot="start">
             <IonMenuButton />
           </IonButtons>
-          <IonTitle>Task Board</IonTitle>
+          <IonTitle className="ion-text-center">Task Board</IonTitle>
         </IonToolbar>
         <IonToolbar>
           <IonSegment value={segment} onIonChange={(e) => setSegment(e.detail.value as any)}>
@@ -155,71 +267,153 @@ const TaskBoard: React.FC = () => {
       </IonHeader>
 
       <IonContent className="ion-padding">
-        {/* Filter by Status */}
-        <IonItem>
-          <IonLabel>Status Filter</IonLabel>
-          <IonSelect value={statusFilter} onIonChange={(e) => setStatusFilter(e.detail.value)}>
+        {segment === "jobcards" && (
+          <IonGrid>
             {(["todo", "in_progress", "done"] as ColumnKey[]).map((col) => (
-              <IonSelectOption key={col} value={col}>
-                {COLUMN_NAMES[col]}
-              </IonSelectOption>
+              <IonRow key={col}>
+                <IonCol>
+                  <h3>{COLUMN_NAMES[col]}</h3>
+                  {columns[col].map((card) => (
+                    <IonCard key={card.id}>
+                      <IonCardHeader>
+                        <IonCardTitle>{card.name}</IonCardTitle>
+                      </IonCardHeader>
+                      <IonCardContent>
+                        {card.job_card_tasks.map((task) => (
+                          <IonItem key={task.id}>
+                            <IonCheckbox
+                              checked={task.is_completed}
+                              slot="start"
+                              onIonChange={() => toggleTaskCompletion(task, card)}
+                            />
+                            <IonLabel>
+                              <h4>{task.title}</h4>
+                              <p>{task.description || "No description"}</p>
+                              {task.job_card_subtasks?.length > 0 && (
+                                <ul style={{ paddingLeft: "1em" }}>
+                                  {task.job_card_subtasks.map((st) => (
+                                    <li key={st.id}>
+                                      <input type="checkbox" checked={st.is_completed} readOnly /> {st.title}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </IonLabel>
+                          </IonItem>
+                        ))}
+                      </IonCardContent>
+                    </IonCard>
+                  ))}
+                </IonCol>
+              </IonRow>
             ))}
-          </IonSelect>
-        </IonItem>
 
-        {/* ✅ Job Cards List */}
-        {segment === "jobcards" &&
-          columns[statusFilter].map((card) => (
-            <IonCard key={card.id}>
-              <IonCardHeader>
-                <IonCardTitle>{card.name}</IonCardTitle>
-              </IonCardHeader>
-              <IonCardContent>
-                {card.job_card_tasks.length ? (
-                  card.job_card_tasks.map((t) => (
-                    <IonItem key={t.id}>
-                      <IonCheckbox checked={t.is_completed} slot="start" />
-                      <IonLabel>{t.title}</IonLabel>
-                    </IonItem>
-                  ))
-                ) : (
-                  <p>No tasks yet.</p>
-                )}
-              </IonCardContent>
-            </IonCard>
-          ))}
+            <IonButton expand="block" onClick={() => setShowModal(true)}>
+              Add Job Card
+            </IonButton>
+          </IonGrid>
+        )}
 
-        {/* ✅ Tasks List */}
-        {segment === "tasks" &&
-          Object.values(columns)
-            .flat()
-            .flatMap((c) => c.job_card_tasks)
-            .filter((t) =>
-              statusFilter === "done"
-                ? t.is_completed
-                : statusFilter === "todo"
-                ? !t.is_completed
-                : !t.is_completed // simple placeholder for in_progress logic
-            )
-            .map((task) => (
-              <IonCard key={task.id}>
-                <IonCardHeader>
-                  <IonCardTitle>{task.title}</IonCardTitle>
-                </IonCardHeader>
-                <IonCardContent>
-                  <p>{task.description || "No description"}</p>
-                  {task.job_card_subtasks?.length > 0 && (
-                    <ul>
-                      {task.job_card_subtasks.map((st) => (
-                        <li key={st.id}>
-                          <input type="checkbox" checked={st.is_completed} readOnly /> {st.title}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </IonCardContent>
-              </IonCard>
-            ))}
+        {segment === "tasks" && (
+          <IonGrid>
+            {(["todo", "in_progress", "done"] as ColumnKey[]).map((col) => {
+              const tasksForColumn: JobTask[] = [];
+              Object.values(columns).forEach((cards) =>
+                cards.forEach((card) =>
+                  card.job_card_tasks.forEach((task) => {
+                    const status: ColumnKey = task.is_completed ? "done" : "in_progress";
+                    if (status === col && (currentUser?.is_admin || task.assignee_id === currentUser?.user_id)) {
+                      tasksForColumn.push({ ...task, job_card_subtasks: task.job_card_subtasks || [] });
+                    }
+                  })
+                )
+              );
+
+              return (
+                <IonRow key={col}>
+                  <IonCol>
+                    <h3>{COLUMN_NAMES[col]}</h3>
+                    {tasksForColumn.map((task) => (
+                      <IonCard key={task.id}>
+                        <IonCardHeader>
+                          <IonCardTitle>{task.title}</IonCardTitle>
+                          <p style={{ fontSize: "0.9em", color: "#555" }}>{task.description || "No description"}</p>
+                        </IonCardHeader>
+                        <IonCardContent>
+                          <IonItem>
+                            <IonCheckbox checked={task.is_completed} slot="start" />
+                            <IonLabel>
+                              Subtasks:
+                              {task.job_card_subtasks?.length ? (
+                                <ul style={{ paddingLeft: "1em" }}>
+                                  {task.job_card_subtasks.map((st) => (
+                                    <li key={st.id}>
+                                      <input type="checkbox" checked={st.is_completed} readOnly /> {st.title}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <span> None</span>
+                              )}
+                            </IonLabel>
+                          </IonItem>
+                        </IonCardContent>
+                      </IonCard>
+                    ))}
+                  </IonCol>
+                </IonRow>
+              );
+            })}
+          </IonGrid>
+        )}
+
+        {/* Create Job Card Modal */}
+        <IonModal isOpen={showModal} onDidDismiss={() => setShowModal(false)}>
+          <IonHeader>
+            <IonToolbar>
+              <IonTitle>Create Job Card</IonTitle>
+            </IonToolbar>
+          </IonHeader>
+          <IonContent className="ion-padding">
+            <IonItem>
+              <IonLabel position="stacked">Job Name (optional)</IonLabel>
+              <IonInput value={jobName} onIonChange={(e) => setJobName(e.detail.value!)} />
+            </IonItem>
+            <IonItem>
+              <IonLabel>Template</IonLabel>
+              <IonSelect value={selectedTemplate} onIonChange={(e) => setSelectedTemplate(e.detail.value)}>
+                {templates.map((tpl) => (
+                  <IonSelectOption key={tpl.id} value={tpl.id}>
+                    {tpl.name}
+                  </IonSelectOption>
+                ))}
+              </IonSelect>
+            </IonItem>
+            <IonItem>
+              <IonLabel>Quote</IonLabel>
+              <IonSelect value={jobQuoteId} onIonChange={(e) => setJobQuoteId(e.detail.value)}>
+                {quotes.map((q) => (
+                  <IonSelectOption key={q.id} value={q.id}>
+                    {q.label}
+                  </IonSelectOption>
+                ))}
+              </IonSelect>
+            </IonItem>
+            <IonItem>
+              <IonLabel>Assign to User</IonLabel>
+              <IonSelect value={jobUserId} onIonChange={(e) => setJobUserId(e.detail.value)}>
+                {users.map((u) => (
+                  <IonSelectOption key={u.user_id} value={u.user_id}>
+                    {u.name}
+                  </IonSelectOption>
+                ))}
+              </IonSelect>
+            </IonItem>
+            <IonButton expand="block" className="ion-margin-top" onClick={createJobCard}>
+              Create
+            </IonButton>
+          </IonContent>
+        </IonModal>
       </IonContent>
     </IonPage>
   );
