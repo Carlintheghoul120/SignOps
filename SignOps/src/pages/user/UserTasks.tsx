@@ -186,7 +186,7 @@ const UserTasks = () => {
           <IonButtons slot="start">
             <IonMenuButton />
           </IonButtons>
-          <IonTitle className="ion-text-center">Jobs</IonTitle>
+          <IonTitle className="ion-text-center">My Tasks</IonTitle>
         </IonToolbar>
       </IonHeader>
 
