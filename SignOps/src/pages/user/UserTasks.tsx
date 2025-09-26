@@ -1,135 +1,237 @@
-import React,{useEffect,useState} from 'react';
+import { useEffect, useState } from "react";
 import {
-	IonPage,
-	IonHeader,
-	IonToolbar,
-	IonTitle,
-	IonContent,
-	IonItem,
-	IonLabel,
-	IonCheckbox,
-	IonList,
-	IonAccordionGroup,
-	IonAccordion,
-	IonText,
-	IonCard,
-	IonCardHeader,
-	IonCardTitle,
-	IonCardContent,
-	IonButtons,
-	IonMenuButton,
-} from '@ionic/react';
-import {supabase} from '../../supbaseclient';
+  IonPage,
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonContent,
+  IonButtons,
+  IonMenuButton,
+  IonCard,
+  IonCardHeader,
+  IonCardTitle,
+  IonCardContent,
+  IonList,
+  IonItem,
+  IonLabel,
+  IonCheckbox,
+  IonSegment,
+  IonSegmentButton,
+} from "@ionic/react";
+import { supabase } from "../../supbaseclient.tsx";
 
-const UserTasks: React.FC=() => {
-	const [taskTemplates,setTaskTemplates]=useState<any[]>([]);
-	const [userBoards,setUserBoards]=useState<any[]>([]);
-	const [userTasks,setUserTasks]=useState<any[]>([]);
+interface JobCard {
+  id: string;
+  name: string;
+  description?: string;
+  status: string;
+  quote_id: string;
+  user_id: string;
+}
 
-	const userId=supabase.auth.getUser()?.then(res => res.data?.user?.id);
+interface JobCardTask {
+  id: string;
+  job_card_id: string;
+  title: string;
+  description?: string;
+  assignee_id?: string;
+  is_completed: boolean;
+}
 
-	useEffect(() => {
-		fetchAll();
-	},[]);
+interface JobCardSubtask {
+  id: string;
+  task_id: string;
+  title: string;
+  is_completed: boolean;
+}
 
-	const fetchAll=async () => {
-		const {data: templates}=await supabase.from('task_templates').select('*');
-		setTaskTemplates(templates||[]);
+const UserTasks = () => {
+  const [jobCards, setJobCards] = useState<JobCard[]>([]);
+  const [tasks, setTasks] = useState<JobCardTask[]>([]);
+  const [subtasks, setSubtasks] = useState<JobCardSubtask[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [segment, setSegment] = useState("jobcards");
 
-		const user=(await supabase.auth.getUser()).data?.user;
-		if(!user) return;
+  // Load current user
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setCurrentUserId(user.id);
+    };
+    getUser();
+  }, []);
 
-		const {data: boards}=await supabase
-			.from('boards')
-			.select('*')
-			.eq('created_by',user.id);
-		setUserBoards(boards||[]);
+  // Fetch tasks for current user
+  useEffect(() => {
+    const fetchAll = async () => {
+      if (!currentUserId) return;
 
-		const {data: tasks}=await supabase
-			.from('tasks')
-			.select('*')
-			.eq('assigned_to',user.id);
-		setUserTasks(tasks||[]);
-	};
+      // Job cards where user is owner
+      const { data: cards } = await supabase
+        .from<JobCard>("job_cards")
+        .select("*")
+        .eq("user_id", currentUserId);
+      setJobCards(cards || []);
 
-	const toggleTaskCompletion=async (taskId: string,currentValue: boolean) => {
-		await supabase
-			.from('tasks')
-			.update({completed: !currentValue,status: !currentValue? 'done':'todo'})
-			.eq('id',taskId);
-		fetchAll();
-	};
+      // Tasks assigned to user
+      const { data: userTasks } = await supabase
+        .from<JobCardTask>("job_card_tasks")
+        .select("*")
+        .eq("assignee_id", currentUserId);
+      setTasks(userTasks || []);
 
-	return (
-		<IonPage>
-			<IonHeader>
-				<IonToolbar color="primary">
-					<IonButtons slot="start">
-						<IonMenuButton />
-					</IonButtons>
-					<IonTitle className="ion-text-center">My Tasks</IonTitle>
-				</IonToolbar>
-			</IonHeader>
+      // Subtasks for those tasks
+      if (userTasks && userTasks.length > 0) {
+        const taskIds = userTasks.map((t) => t.id);
+        const { data: subs } = await supabase
+          .from<JobCardSubtask>("job_card_subtasks")
+          .select("*")
+          .in("task_id", taskIds);
+        setSubtasks(subs || []);
+      }
+    };
 
-			<IonContent className="ion-padding">
+    fetchAll();
+  }, [currentUserId]);
 
-				<IonCard>
-					<IonCardHeader>
-						<IonCardTitle>📋 Task Templates (Read Only)</IonCardTitle>
-					</IonCardHeader>
-					<IonCardContent>
-						<IonList>
-							{taskTemplates.map(template => (
-								<IonItem key={template.id}>
-									<IonLabel>{template.name}</IonLabel>
-								</IonItem>
-							))}
-						</IonList>
-					</IonCardContent>
-				</IonCard>
+  // Real-time notifications for new assignments
+  useEffect(() => {
+    if (!currentUserId) return;
 
-				<IonCard>
-					<IonCardHeader>
-						<IonCardTitle>🧾 Your Task Boards</IonCardTitle>
-					</IonCardHeader>
-					<IonCardContent>
-						{userBoards.map(board => (
-							<IonAccordionGroup key={board.id}>
-								<IonAccordion value={`board-${board.id}`}>
-									<IonItem slot="header">
-										<IonLabel>Board for Quote #{board.quote_id}</IonLabel>
-									</IonItem>
-									<div className="ion-padding" slot="content">
-										<IonList>
-											{userTasks
-												.filter(task => task.board_id===board.id)
-												.map(task => (
-													<IonItem key={task.id}>
-														<IonCheckbox
-															checked={task.completed}
-															onIonChange={() =>
-																toggleTaskCompletion(task.id,task.completed)
-															}
-														/>
-														<IonLabel className="ion-margin-start">
-															<IonText color={task.completed? 'medium':'dark'}>
-																<h2>{task.title}</h2>
-																<p>{task.description}</p>
-															</IonText>
-														</IonLabel>
-													</IonItem>
-												))}
-										</IonList>
-									</div>
-								</IonAccordion>
-							</IonAccordionGroup>
-						))}
-					</IonCardContent>
-				</IonCard>
+    const channel = supabase
+      .channel("task-assignments")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "job_card_tasks",
+          filter: `assignee_id=eq.${currentUserId}`,
+        },
+        (payload) => {
+          const newTask = payload.new as JobCardTask;
+          alert(`You have been assigned a new task: ${newTask.title}`);
+          setTasks((prev) => [...prev, newTask]);
+        }
+      )
+      .subscribe();
 
-			</IonContent>
-		</IonPage>
-	);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId]);
+
+  const toggleTaskCompletion = async (taskId: string, currentValue: boolean) => {
+    await supabase
+      .from<JobCardTask>("job_card_tasks")
+      .update({ is_completed: !currentValue })
+      .eq("id", taskId);
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId ? { ...t, is_completed: !currentValue } : t
+      )
+    );
+  };
+
+  return (
+    <IonPage>
+      <IonHeader>
+        <IonToolbar color="primary">
+          <IonButtons slot="start">
+            <IonMenuButton />
+          </IonButtons>
+          <IonTitle>Jobs</IonTitle>
+        </IonToolbar>
+      </IonHeader>
+
+      <IonContent>
+        <IonSegment
+          value={segment}
+          onIonChange={(e) => setSegment(e.detail.value!)}
+        >
+          <IonSegmentButton value="jobcards">
+            <IonLabel>Job Cards</IonLabel>
+          </IonSegmentButton>
+          <IonSegmentButton value="tasks">
+            <IonLabel>Tasks</IonLabel>
+          </IonSegmentButton>
+          <IonSegmentButton value="subtasks">
+            <IonLabel>Subtasks</IonLabel>
+          </IonSegmentButton>
+        </IonSegment>
+
+        {/* Job Cards */}
+        {segment === "jobcards" && (
+          <>
+            {jobCards.length === 0 ? (
+              <IonCard>
+                <IonCardContent>No job cards yet.</IonCardContent>
+              </IonCard>
+            ) : (
+              jobCards.map((c) => (
+                <IonCard key={c.id}>
+                  <IonCardHeader>
+                    <IonCardTitle>{c.name}</IonCardTitle>
+                  </IonCardHeader>
+                  <IonCardContent>
+                    {c.description || "No description"}
+                    <p>Status: {c.status}</p>
+                  </IonCardContent>
+                </IonCard>
+              ))
+            )}
+          </>
+        )}
+
+        {/* Tasks */}
+        {segment === "tasks" && (
+          <>
+            {tasks.length === 0 ? (
+              <IonCard>
+                <IonCardContent>No tasks assigned.</IonCardContent>
+              </IonCard>
+            ) : (
+              <IonList>
+                {tasks.map((task) => (
+                  <IonItem key={task.id}>
+                    <IonLabel>{task.title}</IonLabel>
+					<IonCheckbox
+					slot="end"
+                      checked={task.is_completed}
+                      onIonChange={() =>
+                        toggleTaskCompletion(task.id, task.is_completed)
+                      }
+                    />
+                  </IonItem>
+                ))}
+              </IonList>
+            )}
+          </>
+        )}
+
+        {/* Subtasks */}
+        {segment === "subtasks" && (
+          <>
+            {subtasks.length === 0 ? (
+              <IonCard>
+                <IonCardContent>No subtasks available.</IonCardContent>
+              </IonCard>
+            ) : (
+              <IonList>
+                {subtasks.map((st) => (
+                  <IonItem key={st.id}>
+                    <IonLabel>{st.title}</IonLabel>
+					<IonCheckbox slot="end" checked={st.is_completed} disabled />
+                  </IonItem>
+                ))}
+              </IonList>
+            )}
+          </>
+        )}
+      </IonContent>
+    </IonPage>
+  );
 };
 
 export default UserTasks;
