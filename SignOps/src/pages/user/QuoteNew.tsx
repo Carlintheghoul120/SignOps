@@ -52,7 +52,7 @@ const QuoteNew: React.FC = () => {
     misc_items: [] as MiscItem[],
   });
 
-  // ─── Load data ───────────────────────────────
+  // ─── Load data & user ─────────────────────────────
   useEffect(() => {
     fetchData();
     getUser();
@@ -119,7 +119,6 @@ const QuoteNew: React.FC = () => {
   // ─── Autofill existing customer ─────────────
   useEffect(() => {
     if (!form.customer_id) return;
-
     const selected = customers.find(c => c.id === form.customer_id);
     if (selected) {
       setForm(f => ({
@@ -139,7 +138,7 @@ const QuoteNew: React.FC = () => {
 
     const signageCost = linkedMaterials.reduce(
       (sum, m) =>
-        sum + (m.price_per_unit ?? m.base_price ?? 0) * (m.quantity_required ?? 1) * area,
+        sum + (m.price_per_unit ?? m.price ?? 0) * (m.quantity_required ?? 1) * area,
       0
     );
 
@@ -226,17 +225,16 @@ const QuoteNew: React.FC = () => {
         .single();
 
       if (error || !quote) throw error;
-
       const newQuoteId = quote.quote_id as string;
 
-      // Addons
+      // ─── Addons ─────────
       if (form.addon_ids.length) {
         await supabase.from("quote_addons").insert(
           form.addon_ids.map((id) => ({ quote_id: newQuoteId, addon_id: id }))
         );
       }
 
-      // Misc items
+      // ─── Misc Items ─────────
       if (form.misc_items.length) {
         await supabase.from("quote_misc_items").insert(
           form.misc_items
@@ -251,7 +249,7 @@ const QuoteNew: React.FC = () => {
       }
 
       setQuoteId(newQuoteId);
-      setToastMsg("Quote submitted!");
+      setToastMsg("Quote submitted successfully!");
       setSection(3);
     } catch (e) {
       console.error(e);
@@ -486,7 +484,6 @@ const QuoteNew: React.FC = () => {
                         </IonCard>
                       ))}
 
-                      {/* ─── Live Costs Display ─── */}
                       <IonText className="ion-padding-top">
                         <p><strong>Signage:</strong> R{costs.signageCost.toFixed(2)}</p>
                         <p><strong>Materials:</strong> R{costs.materialCost.toFixed(2)}</p>
