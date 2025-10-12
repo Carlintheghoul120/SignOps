@@ -84,6 +84,7 @@ const QuoteNew: React.FC = () => {
       .from("signage_materials")
       .select(`
         quantity_required,
+        scale_with_area,
         materials(material_id, name, price, price_per_unit, unit_type)
       `)
       .eq("signage_id", signageId);
@@ -97,6 +98,7 @@ const QuoteNew: React.FC = () => {
     const flattened = (data || []).map((row: any) => ({
       ...row.materials,
       quantity_required: row.quantity_required ?? 1,
+      scale_with_area: row.scale_with_area ?? true,
     }));
     setLinkedMaterials(flattened);
   };
@@ -136,12 +138,14 @@ const QuoteNew: React.FC = () => {
   const costs = React.useMemo(() => {
     const area = form.width * form.height;
 
+    // signageCost: per your frontend rules (materials that scale with area)
     const signageCost = linkedMaterials.reduce(
       (sum, m) =>
         sum + (m.price_per_unit ?? m.price ?? 0) * (m.quantity_required ?? 1) * area,
       0
     );
 
+    // materialCost: base materials (not scaled by area)
     const materialCost = linkedMaterials.reduce(
       (sum, m) => sum + (m.price_per_unit ?? m.price ?? 0) * (m.quantity_required ?? 1),
       0
@@ -181,6 +185,38 @@ const QuoteNew: React.FC = () => {
     setSubmitting(true);
     setToastMsg("");
 
+    // compute area once
+    const area = form.width * form.height;
+
+    // Prepare costs same as live calc (defensive)
+    const signageCost = linkedMaterials.reduce(
+      (sum, m) =>
+        sum + (safeFloat(m.price_per_unit ?? m.price ?? 0) * (m.quantity_required ?? 1) * area),
+      0
+    );
+
+    const materialCost = linkedMaterials.reduce(
+      (sum, m) => sum + (safeFloat(m.price_per_unit ?? m.price ?? 0) * (m.quantity_required ?? 1)),
+      0
+    );
+
+    // compute addon cost by looking up addons (safer than trusting frontend a bit)
+    const { data: addonRows } = await supabase
+      .from("addons")
+      .select("addon_id, flat_rate, per_sqm_rate, is_flat")
+      .in("addon_id", form.addon_ids);
+
+    const addonCost = (addonRows ?? []).reduce((sum: number, a: any) => {
+      if (a.is_flat) return sum + (safeFloat(a.flat_rate, 0));
+      return sum + (safeFloat(a.per_sqm_rate, 0) * area);
+    }, 0);
+
+    const miscCost = form.misc_items.reduce((sum, m) => sum + m.quantity * m.unit_price, 0);
+
+    const petrolFee = Math.max(0, form.distance_km - 5) * 6.5;
+
+    const totalCost = signageCost + materialCost + addonCost + miscCost + petrolFee;
+
     let customerId = form.customer_id;
     if (!customerId) {
       const { data, error } = await supabase
@@ -204,6 +240,7 @@ const QuoteNew: React.FC = () => {
     }
 
     try {
+      // Insert quote (minimal info first) but also save petrol_fee, area and total_cost placeholders
       const { data: quote, error } = await supabase
         .from("quotes")
         .insert({
@@ -218,8 +255,9 @@ const QuoteNew: React.FC = () => {
           client_address: form.client_address,
           customer_id: customerId,
           google_distance_km: form.distance_km,
-          petrol_fee: costs.petrolFee,
-          total_cost: costs.totalCost,
+          petrol_fee: petrolFee,
+          // we'll update detailed breakdown after creating child rows, but store total now
+          total_cost: totalCost,
         })
         .select()
         .single();
@@ -227,26 +265,117 @@ const QuoteNew: React.FC = () => {
       if (error || !quote) throw error;
       const newQuoteId = quote.quote_id as string;
 
-      // ─── Addons ─────────
-      if (form.addon_ids.length) {
-        await supabase.from("quote_addons").insert(
-          form.addon_ids.map((id) => ({ quote_id: newQuoteId, addon_id: id }))
-        );
+      // ─── Quote Materials: persist the material rows (unit price / qty / total) ─────────
+      // For each linked material, compute quantity and total consistent with frontend rules:
+      // - If unit_type = 'sqm' and scale_with_area => quantity = quantity_required * area (but the quote_materials.quantity column probably represents units, keep original intention: store quantity_required as base qty, and store unit_price, total)
+      // We'll store:
+      //   quantity = (m.scale_with_area ? quantity_required * area : quantity_required)
+      //   unit_price = price_per_unit ?? price
+      //   total = quantity * unit_price
+      if (linkedMaterials.length) {
+        const qmInserts = linkedMaterials.map((m) => {
+          const unitPrice = safeFloat(m.price_per_unit ?? m.price ?? 0);
+          // if scale_with_area true we multiply by area (so unit quantity becomes quantity_required * area)
+          const qty = (m.scale_with_area ? (m.quantity_required ?? 1) * area : (m.quantity_required ?? 1));
+          const total = unitPrice * qty;
+          return {
+            quote_id: newQuoteId,
+            material_id: m.material_id,
+            quantity: qty,
+            unit_price: unitPrice,
+            //total,
+          };
+        });
+
+        // insert in chunks
+        const { error: qmError } = await supabase.from("quote_materials").insert(qmInserts);
+        if (qmError) console.warn("Failed to insert quote_materials:", qmError);
       }
 
-      // ─── Misc Items ─────────
+      // ─── Quote Addons (map only) ─────────
+      if (form.addon_ids.length) {
+        const qaInserts = form.addon_ids.map((id) => ({ quote_id: newQuoteId, addon_id: id }));
+        const { error: qaError } = await supabase.from("quote_addons").insert(qaInserts);
+        if (qaError) console.warn("Failed to insert quote_addons:", qaError);
+      }
+
+      // ─── Quote Misc Items ─────────
       if (form.misc_items.length) {
-        await supabase.from("quote_misc_items").insert(
-          form.misc_items
-            .filter((m) => m.name.trim().length)
-            .map((m) => ({
+        const qmiInserts = form.misc_items
+          .filter((m) => m.name.trim().length)
+          .map((m) => {
+            //const total = m.quantity * m.unit_price;
+            return {
               quote_id: newQuoteId,
               name: m.name,
               quantity: m.quantity,
               unit_price: m.unit_price,
-            }))
-        );
+              //total,
+            };
+          });
+        const { error: qmiError } = await supabase.from("quote_misc_items").insert(qmiInserts);
+        if (qmiError) console.warn("Failed to insert quote_misc_items:", qmiError);
       }
+
+      // ─── Recompute breakdown server-side (defensive) and update quotes row so DB has persisted costs ─────────
+      // Fetch materials totals from quote_materials
+      const { data: savedMats } = await supabase
+        .from("quote_materials")
+        .select("quantity, unit_price, total");
+
+      // But we need only those for this quote:
+      const { data: matsForQuote } = await supabase
+        .from("quote_materials")
+        .select("quantity, unit_price, total")
+        .eq("quote_id", newQuoteId);
+
+      const materialCostPersist = (matsForQuote ?? []).reduce((s: number, r: any) => s + safeFloat(r.total, 0), 0);
+
+      // Sum addons using DB table
+      const { data: selectedAddons } = await supabase
+        .from("addons")
+        .select("addon_id, flat_rate, per_sqm_rate, is_flat")
+        .in("addon_id", form.addon_ids);
+
+      const addonCostPersist = (selectedAddons ?? []).reduce((s: number, a: any) => {
+        if (a.is_flat) return s + safeFloat(a.flat_rate, 0);
+        return s + safeFloat(a.per_sqm_rate, 0) * area;
+      }, 0);
+
+      // Sum misc from quote_misc_items
+      const { data: miscForQuote } = await supabase
+        .from("quote_misc_items")
+        .select("total")
+        .eq("quote_id", newQuoteId);
+
+      const miscCostPersist = (miscForQuote ?? []).reduce((s: number, r: any) => s + safeFloat(r.total, 0), 0);
+
+      // signageCostPersist: keep the frontend definition (materials that scale by area)
+      const signageCostPersist = linkedMaterials.reduce(
+        (sum, m) =>
+          sum + (safeFloat(m.price_per_unit ?? m.price ?? 0) * (m.quantity_required ?? 1) * area),
+        0
+      );
+
+      const petrolFeePersist = petrolFee;
+
+      const totalPersist = signageCostPersist + materialCostPersist + addonCostPersist + miscCostPersist + petrolFeePersist;
+
+      // Update the quotes row with persisted breakdown values
+      const { error: updateError } = await supabase
+        .from("quotes")
+        .update({
+          signage_cost: signageCostPersist,
+          material_cost: materialCostPersist,
+          addon_cost: addonCostPersist,
+          misc_cost: miscCostPersist,
+          petrol_fee: petrolFeePersist,
+          total_cost: totalPersist,
+          //area: area,
+        })
+        .eq("quote_id", newQuoteId);
+
+      if (updateError) console.warn("Failed to update quote breakdown:", updateError);
 
       setQuoteId(newQuoteId);
       setToastMsg("Quote submitted successfully!");
@@ -486,7 +615,6 @@ const QuoteNew: React.FC = () => {
 
                       <IonText className="ion-padding-top">
                         <p><strong>Signage:</strong> R{costs.signageCost.toFixed(2)}</p>
-                        <p><strong>Materials:</strong> R{costs.materialCost.toFixed(2)}</p>
                         <p><strong>Addons:</strong> R{costs.addonCost.toFixed(2)}</p>
                         <p><strong>Misc Items:</strong> R{costs.miscCost.toFixed(2)}</p>
                         <p><strong>Petrol Fee:</strong> R{costs.petrolFee.toFixed(2)}</p>

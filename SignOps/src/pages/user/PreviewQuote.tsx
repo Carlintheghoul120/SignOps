@@ -173,7 +173,6 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           <h3>Breakdown:</h3>
           <ul>
             <li>Signage: R{quote.signage_cost}</li>
-            <li>Materials: R{quote.material_cost}</li>
             <li>Add-ons: R{quote.addon_cost}</li>
             <li>Misc: R{quote.misc_cost}</li>
             <li>Petrol Fee: R{quote.petrol_fee ?? 0}</li>
