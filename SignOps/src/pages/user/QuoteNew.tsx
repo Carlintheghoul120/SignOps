@@ -166,7 +166,7 @@ const QuoteNew: React.FC = () => {
       addonCost,
       miscCost,
       petrolFee,
-      totalCost: signageCost + materialCost + addonCost + miscCost + petrolFee,
+      totalCost: signageCost + addonCost + miscCost + petrolFee,
     };
   }, [form, linkedMaterials, addons]);
 
