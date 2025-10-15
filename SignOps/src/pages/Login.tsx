@@ -19,7 +19,7 @@ import {useHistory} from 'react-router-dom';
 import {supabase} from '../supbaseclient';
 import {useAuth} from '../AuthContext';
 import {useState,useEffect} from 'react';
-import LOGO from '../assets/img/logo.png'
+import LOGO from '../../resources/icon.png';
 
 const Login: React.FC=() => {
 	const history=useHistory();

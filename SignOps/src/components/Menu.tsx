@@ -28,7 +28,7 @@ import {
 import { useHistory } from 'react-router-dom';
 
 import './Menu.css';
-import LOGO from '../assets/img/logo.png';
+import LOGO from '../../resources/icon.png';
 
 const appPages = [
   {

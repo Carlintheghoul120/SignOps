@@ -8,8 +8,12 @@ import {
   IonText,
   IonButton,
   IonToast,
+  IonAlert,
 } from "@ionic/react";
 import { supabase } from "../../supbaseclient.tsx";
+import { Browser } from "@capacitor/browser";
+import { Filesystem, Directory } from "@capacitor/filesystem";
+const { writeFile } = Filesystem;
 
 interface PreviewQuoteProps {
   quoteId: string;
@@ -56,6 +60,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
   const [error, setError] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showSaveAlert, setShowSaveAlert] = useState(false);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -64,8 +69,6 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
     const fetchQuote = async () => {
       try {
         setLoading(true);
-
-        // Pull from view (handles all joins + trigger logic)
         const { data, error } = await supabase
           .from("preview_quote")
           .select("*")
@@ -73,7 +76,6 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           .single();
 
         if (error || !data) throw error ?? new Error("Quote not found");
-
         setQuote(data as Quote);
       } catch (err: unknown) {
         console.error("❌ Error fetching quote:", err);
@@ -82,7 +84,6 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         setLoading(false);
       }
     };
-
     fetchQuote();
   }, [quoteId]);
 
@@ -90,9 +91,8 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
     globalThis.print();
   };
 
-  const handleGeneratePDF = async () => {
-    if (!quote) return;
-    setPdfLoading(true);
+  const fetchPDFBlob = async (): Promise<Blob | null> => {
+    if (!quote) return null;
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/generate_quote_pdf`, {
         method: "POST",
@@ -102,22 +102,55 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         },
         body: JSON.stringify({ quoteId }),
       });
-
       if (!res.ok) {
         const err = await res.json();
         console.error("❌ Error generating PDF:", err);
         setToastMessage("Failed to generate PDF. See console.");
-        return;
+        return null;
       }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      globalThis.open(url);
+      return await res.blob();
     } catch (err) {
       console.error("❌ Failed to generate PDF:", err);
       setToastMessage("Failed to generate PDF. See console.");
+      return null;
+    }
+  };
+
+  const handleOpenPDF = async () => {
+    setPdfLoading(true);
+    try {
+      const blob = await fetchPDFBlob();
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      await Browser.open({ url }); // open in mobile browser
     } finally {
       setPdfLoading(false);
+    }
+  };
+
+  const handleSavePDF = async () => {
+    setPdfLoading(true);
+    try {
+      const blob = await fetchPDFBlob();
+      if (!blob) return;
+
+      const arrayBuffer = await blob.arrayBuffer();
+      const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const fileName = `quote-${quoteId}.pdf`;
+
+      await writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.Documents,
+      });
+
+      setToastMessage(`PDF saved as ${fileName} in your Documents folder`);
+    } catch (err) {
+      console.error("❌ Failed to save PDF:", err);
+      setToastMessage("Failed to save PDF. See console.");
+    } finally {
+      setPdfLoading(false);
+      setShowSaveAlert(false);
     }
   };
 
@@ -164,11 +197,22 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           <IonCardTitle>Quote Preview</IonCardTitle>
         </IonCardHeader>
         <IonCardContent>
-          <p><strong>Company:</strong> {quote.company_name}</p>
-          <p><strong>Contact:</strong> {quote.contact_name} ({quote.contact_email}, {quote.contact_phone})</p>
-          <p><strong>Address:</strong> {quote.client_address}</p>
-          <p><strong>Signage:</strong> {quote.signage_name}</p>
-          <p><strong>Dimensions:</strong> {quote.width}m × {quote.height}m</p>
+          <p>
+            <strong>Company:</strong> {quote.company_name}
+          </p>
+          <p>
+            <strong>Contact:</strong> {quote.contact_name} ({quote.contact_email},{" "}
+            {quote.contact_phone})
+          </p>
+          <p>
+            <strong>Address:</strong> {quote.client_address}
+          </p>
+          <p>
+            <strong>Signage:</strong> {quote.signage_name}
+          </p>
+          <p>
+            <strong>Dimensions:</strong> {quote.width}m × {quote.height}m
+          </p>
 
           <h3>Breakdown:</h3>
           <ul>
@@ -178,7 +222,9 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
             <li>Petrol Fee: R{quote.petrol_fee ?? 0}</li>
           </ul>
 
-          <p><strong>Total Cost:</strong> R{quote.total_cost}</p>
+          <p>
+            <strong>Total Cost:</strong> R{quote.total_cost}
+          </p>
 
           {quote.addons?.length > 0 && (
             <>
@@ -206,19 +252,37 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
             </>
           )}
 
-          <IonButton expand="block" color="primary" onClick={handlePrint}>Print Quote</IonButton>
-          <IonButton expand="block" color="secondary" onClick={handleGeneratePDF} disabled={pdfLoading}>
-            {pdfLoading ? "Generating PDF..." : "Download PDF"}
+          <IonButton expand="block" color="primary" onClick={handlePrint}>
+            Print Quote
+          </IonButton>
+          <IonButton
+            expand="block"
+            color="secondary"
+            onClick={() => setShowSaveAlert(true)}
+            disabled={pdfLoading}
+          >
+            {pdfLoading ? "Processing PDF..." : "Open / Save PDF"}
           </IonButton>
         </IonCardContent>
       </IonCard>
+
+      <IonAlert
+        isOpen={showSaveAlert}
+        header="PDF Options"
+        message="Would you like to open the PDF in browser or save it to your device?"
+        buttons={[
+          { text: "Cancel", role: "cancel", handler: () => setShowSaveAlert(false) },
+          { text: "Open", handler: handleOpenPDF },
+          { text: "Save", handler: handleSavePDF },
+        ]}
+      />
 
       <IonToast
         isOpen={!!toastMessage}
         message={toastMessage || ""}
         duration={3000}
         onDidDismiss={() => setToastMessage(null)}
-        color="danger"
+        color="success"
       />
     </>
   );
