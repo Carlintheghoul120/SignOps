@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   IonCard,
   IonCardHeader,
@@ -8,12 +8,11 @@ import {
   IonText,
   IonButton,
   IonToast,
-  IonAlert,
 } from "@ionic/react";
+import html2canvas from "html2canvas";
 import { supabase } from "../../supbaseclient.tsx";
-import { Browser } from "@capacitor/browser";
 import { Filesystem, Directory } from "@capacitor/filesystem";
-const { writeFile } = Filesystem;
+import { Browser } from "@capacitor/browser";
 
 interface PreviewQuoteProps {
   quoteId: string;
@@ -60,7 +59,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
   const [error, setError] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [showSaveAlert, setShowSaveAlert] = useState(false);
+  const quoteRef = useRef<HTMLIonCardElement>(null);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -69,6 +68,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
     const fetchQuote = async () => {
       try {
         setLoading(true);
+
         const { data, error } = await supabase
           .from("preview_quote")
           .select("*")
@@ -76,6 +76,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           .single();
 
         if (error || !data) throw error ?? new Error("Quote not found");
+
         setQuote(data as Quote);
       } catch (err: unknown) {
         console.error("❌ Error fetching quote:", err);
@@ -84,15 +85,40 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         setLoading(false);
       }
     };
+
     fetchQuote();
   }, [quoteId]);
 
-  const handlePrint = () => {
-    globalThis.print();
+  const handleScreenshot = async () => {
+    if (!quoteRef.current) return;
+    try {
+      const canvas = await html2canvas(quoteRef.current, { scale: 2 });
+      const dataUrl = canvas.toDataURL("image/png");
+      const base64 = dataUrl.split(",")[1];
+
+      const fileName = `quote_${quote?.quote_id}_screenshot.png`;
+
+      const savedFile = await Filesystem.writeFile({
+        path: fileName,
+        data: base64,
+        directory: Directory.Documents,
+        recursive: true,
+      });
+
+      setToastMessage("Screenshot saved successfully!");
+      console.log("Screenshot saved at:", savedFile.uri);
+
+      // Optionally open
+      await Browser.open({ url: savedFile.uri });
+    } catch (err) {
+      console.error("❌ Failed to take screenshot:", err);
+      setToastMessage("Failed to take screenshot. See console.");
+    }
   };
 
-  const fetchPDFBlob = async (): Promise<Blob | null> => {
-    if (!quote) return null;
+  const handleGeneratePDF = async () => {
+    if (!quote) return;
+    setPdfLoading(true);
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/generate_quote_pdf`, {
         method: "POST",
@@ -102,55 +128,41 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         },
         body: JSON.stringify({ quoteId }),
       });
+
       if (!res.ok) {
         const err = await res.json();
         console.error("❌ Error generating PDF:", err);
         setToastMessage("Failed to generate PDF. See console.");
-        return null;
+        return;
       }
-      return await res.blob();
+
+      const blob = await res.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ""
+        )
+      );
+
+      const fileName = `quote_${quote.quote_id}.pdf`;
+
+      const savedFile = await Filesystem.writeFile({
+        path: fileName,
+        data: base64,
+        directory: Directory.Documents,
+        recursive: true,
+      });
+
+      console.log("PDF saved at:", savedFile.uri);
+
+      // Open PDF safely
+      await Browser.open({ url: savedFile.uri });
     } catch (err) {
       console.error("❌ Failed to generate PDF:", err);
       setToastMessage("Failed to generate PDF. See console.");
-      return null;
-    }
-  };
-
-  const handleOpenPDF = async () => {
-    setPdfLoading(true);
-    try {
-      const blob = await fetchPDFBlob();
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      await Browser.open({ url }); // open in mobile browser
     } finally {
       setPdfLoading(false);
-    }
-  };
-
-  const handleSavePDF = async () => {
-    setPdfLoading(true);
-    try {
-      const blob = await fetchPDFBlob();
-      if (!blob) return;
-
-      const arrayBuffer = await blob.arrayBuffer();
-      const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-      const fileName = `quote-${quoteId}.pdf`;
-
-      await writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Documents,
-      });
-
-      setToastMessage(`PDF saved as ${fileName} in your Documents folder`);
-    } catch (err) {
-      console.error("❌ Failed to save PDF:", err);
-      setToastMessage("Failed to save PDF. See console.");
-    } finally {
-      setPdfLoading(false);
-      setShowSaveAlert(false);
     }
   };
 
@@ -192,7 +204,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
 
   return (
     <>
-      <IonCard>
+      <IonCard ref={quoteRef}>
         <IonCardHeader>
           <IonCardTitle>Quote Preview</IonCardTitle>
         </IonCardHeader>
@@ -252,30 +264,14 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
             </>
           )}
 
-          <IonButton expand="block" color="primary" onClick={handlePrint}>
-            Print Quote
+          <IonButton expand="block" color="primary" onClick={handleScreenshot}>
+            Take Screenshot
           </IonButton>
-          <IonButton
-            expand="block"
-            color="secondary"
-            onClick={() => setShowSaveAlert(true)}
-            disabled={pdfLoading}
-          >
-            {pdfLoading ? "Processing PDF..." : "Open / Save PDF"}
+          <IonButton expand="block" color="secondary" onClick={handleGeneratePDF} disabled={pdfLoading}>
+            {pdfLoading ? "Generating PDF..." : "Download PDF"}
           </IonButton>
         </IonCardContent>
       </IonCard>
-
-      <IonAlert
-        isOpen={showSaveAlert}
-        header="PDF Options"
-        message="Would you like to open the PDF in browser or save it to your device?"
-        buttons={[
-          { text: "Cancel", role: "cancel", handler: () => setShowSaveAlert(false) },
-          { text: "Open", handler: handleOpenPDF },
-          { text: "Save", handler: handleSavePDF },
-        ]}
-      />
 
       <IonToast
         isOpen={!!toastMessage}
