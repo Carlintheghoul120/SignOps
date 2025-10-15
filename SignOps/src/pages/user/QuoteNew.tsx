@@ -628,9 +628,8 @@ const QuoteNew: React.FC = () => {
                     </>
                   )}
 
-                  {/* SECTION 3: Preview */}
                   {section === 3 && quoteId && (
-                    <PreviewQuote quoteId={quoteId} />
+                    <PreviewQuote quoteId={quoteId } />
                   )}
 
                 </IonCardContent>
