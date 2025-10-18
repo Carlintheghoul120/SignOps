@@ -18,8 +18,12 @@ import {
   IonCol,
   IonButtons,
   IonMenuButton,
+  IonAlert,
 } from "@ionic/react";
 import { supabase } from "../../supbaseclient.tsx";
+import { Filesystem, Directory } from "@capacitor/filesystem";
+import { Browser } from "@capacitor/browser";
+import { Capacitor } from "@capacitor/core";
 
 interface Quote {
   quote_id: string;
@@ -37,13 +41,19 @@ export const QuoteHistory: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [showPermissionAlert, setShowPermissionAlert] = useState(false);
 
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  // ✅ Fetch quotes with user + signage lookup
   const fetchQuotes = async () => {
     try {
       const { data: quotesData, error: quotesError } = await supabase
         .from("quotes")
         .select("*")
         .order("created_at", { ascending: false });
+
       if (quotesError || !quotesData) throw quotesError;
 
       const { data: users } = await supabase.from("users").select("user_id, name");
@@ -60,22 +70,34 @@ export const QuoteHistory: React.FC = () => {
 
       setQuotes(mappedQuotes);
     } catch (err) {
-      console.error("Error fetching quotes:", err);
-      setToastMessage("Error fetching quotes");
+      console.error("❌ Error fetching quotes:", err);
+      setToastMessage("Failed to fetch quotes.");
     }
   };
-
 
   useEffect(() => {
     fetchQuotes();
   }, []);
 
+  // ✅ Permission request
+    const requestPermissions = async () => {
+      // Use Capacitor platform detection instead of react-native.
+      // For automated Android runtime permission requests you would need
+      // a native Capacitor plugin; for now prompt user to enable permissions.
+      if (Capacitor.getPlatform() === "android") {
+        setShowPermissionAlert(true);
+        return false;
+      }
+      return true;
+    };
 
+  // ✅ Generate PDF and save locally
   const handleGeneratePDF = async (quoteId: string) => {
     setPdfLoading(true);
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-	const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
     try {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) return;
+
       const res = await fetch(`${supabaseUrl}/functions/v1/generate_quote_pdf`, {
         method: "POST",
         headers: {
@@ -88,34 +110,56 @@ export const QuoteHistory: React.FC = () => {
       if (!res.ok) {
         const err = await res.json();
         console.error("❌ Error generating PDF:", err);
-        setToastMessage("Failed to generate PDF. See console.");
+        setToastMessage("Failed to generate PDF. See console for details.");
         return;
       }
 
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      globalThis.open(url);
+      const arrayBuffer = await blob.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ""
+        )
+      );
+
+      const fileName = `quote_${quoteId}.pdf`;
+
+      const savedFile = await Filesystem.writeFile({
+        path: fileName,
+        data: base64,
+        directory: Directory.Documents,
+        recursive: true,
+      });
+
+      console.log("📄 PDF saved at:", savedFile.uri);
+      setToastMessage("✅ PDF saved successfully!");
+
+      // Optionally open the file
+      await Browser.open({ url: savedFile.uri });
     } catch (err) {
-      console.error("❌ Failed to generate PDF:", err);
-      setToastMessage("Failed to generate PDF. See console.");
+      console.error("❌ PDF generation failed:", err);
+      setToastMessage("PDF generation failed.");
     } finally {
       setPdfLoading(false);
     }
   };
 
+  // ✅ Filter quotes
   const filteredQuotes = quotes.filter((q) =>
     Object.values(q).some((val) =>
       val?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     )
   );
 
+  // ✅ Render
   return (
     <IonPage>
       <IonHeader>
-			<IonToolbar color="primary">
-					  <IonButtons slot="start">
-						<IonMenuButton />
-					  </IonButtons>
+        <IonToolbar color="primary">
+          <IonButtons slot="start">
+            <IonMenuButton />
+          </IonButtons>
           <IonTitle>Quote History</IonTitle>
         </IonToolbar>
       </IonHeader>
@@ -126,6 +170,15 @@ export const QuoteHistory: React.FC = () => {
           message={toastMessage}
           duration={3000}
           onDidDismiss={() => setToastMessage("")}
+          color="success"
+        />
+
+        <IonAlert
+          isOpen={showPermissionAlert}
+          onDidDismiss={() => setShowPermissionAlert(false)}
+          header="Permission Required"
+          message="Storage permission is required to save PDFs. Please enable it in Settings."
+          buttons={["OK"]}
         />
 
         <IonInput
@@ -135,48 +188,57 @@ export const QuoteHistory: React.FC = () => {
           className="ion-margin-bottom"
         />
 
-        {filteredQuotes.map((q) => (
-          <IonCard key={q.quote_id} className="ion-margin-bottom">
-            <IonCardHeader>
-              <IonCardTitle>Quote ID: {q.quote_id}</IonCardTitle>
-            </IonCardHeader>
+        {filteredQuotes.length === 0 ? (
+          <IonCard>
             <IonCardContent>
-              <IonRow>
-                <IonCol>
-                  <IonLabel>
-                    <strong>User:</strong> {q.user_name}
-                  </IonLabel>
-                </IonCol>
-                <IonCol>
-                  <IonLabel>
-                    <strong>Signage:</strong> {q.signage_name}
-                  </IonLabel>
-                </IonCol>
-				<IonCol>
-                  <IonLabel>
-                    <strong>Total Cost:</strong> {q.total_cost}
-                  </IonLabel>
-                </IonCol>
-              </IonRow>
-              <IonRow>
-                <IonCol>
-                  <IonLabel>
-                    <strong>Created:</strong>{" "}
-                    {new Date(q.created_at).toLocaleString()}
-                  </IonLabel>
-                </IonCol>
-                <IonCol>
-                  <IonButton
-                    onClick={() => handleGeneratePDF(q.quote_id)}
-                    disabled={pdfLoading}
-                  >
-                    {pdfLoading ? <IonSpinner name="dots" /> : "Generate PDF"}
-                  </IonButton>
-                </IonCol>
-              </IonRow>
+              <IonLabel>No quotes found.</IonLabel>
             </IonCardContent>
           </IonCard>
-        ))}
+        ) : (
+          filteredQuotes.map((q) => (
+            <IonCard key={q.quote_id} className="ion-margin-bottom">
+              <IonCardHeader>
+                <IonCardTitle>Quote ID: {q.quote_id}</IonCardTitle>
+              </IonCardHeader>
+              <IonCardContent>
+                <IonRow>
+                  <IonCol>
+                    <IonLabel>
+                      <strong>User:</strong> {q.user_name}
+                    </IonLabel>
+                  </IonCol>
+                  <IonCol>
+                    <IonLabel>
+                      <strong>Signage:</strong> {q.signage_name}
+                    </IonLabel>
+                  </IonCol>
+                  <IonCol>
+                    <IonLabel>
+                      <strong>Total Cost:</strong> {q.total_cost}
+                    </IonLabel>
+                  </IonCol>
+                </IonRow>
+                <IonRow>
+                  <IonCol>
+                    <IonLabel>
+                      <strong>Created:</strong>{" "}
+                      {new Date(q.created_at).toLocaleString()}
+                    </IonLabel>
+                  </IonCol>
+                  <IonCol size="auto">
+                    <IonButton
+                      onClick={() => handleGeneratePDF(q.quote_id)}
+                      disabled={pdfLoading}
+                      color="secondary"
+                    >
+                      {pdfLoading ? <IonSpinner name="dots" /> : "Download PDF"}
+                    </IonButton>
+                  </IonCol>
+                </IonRow>
+              </IonCardContent>
+            </IonCard>
+          ))
+        )}
       </IonContent>
     </IonPage>
   );

@@ -8,11 +8,13 @@ import {
   IonText,
   IonButton,
   IonToast,
+  IonAlert,
 } from "@ionic/react";
 import html2canvas from "html2canvas";
 import { supabase } from "../../supbaseclient.tsx";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import { Browser } from "@capacitor/browser";
+import { Capacitor } from "@capacitor/core";
 
 interface PreviewQuoteProps {
   quoteId: string;
@@ -57,18 +59,19 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
   const [loading, setLoading] = useState(true);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [showPermissionAlert, setShowPermissionAlert] = useState(false);
   const quoteRef = useRef<HTMLIonCardElement>(null);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+  // ✅ Fetch quote
   useEffect(() => {
     const fetchQuote = async () => {
       try {
         setLoading(true);
-
         const { data, error } = await supabase
           .from("preview_quote")
           .select("*")
@@ -76,11 +79,10 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           .single();
 
         if (error || !data) throw error ?? new Error("Quote not found");
-
         setQuote(data as Quote);
-      } catch (err: unknown) {
+      } catch (err: any) {
         console.error("❌ Error fetching quote:", err);
-        setError(err instanceof Error ? err.message : "Failed to fetch quote");
+        setError(err.message || "Failed to fetch quote");
       } finally {
         setLoading(false);
       }
@@ -89,13 +91,34 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
     fetchQuote();
   }, [quoteId]);
 
+  // ✅ Permission request
+    const requestPermissions = async () => {
+      // Use Capacitor platform detection and request filesystem permissions on Android
+      if (Capacitor.getPlatform() === "android") {
+        try {
+          // Request filesystem permissions via Capacitor Filesystem plugin (prompts on Android)
+          await Filesystem.requestPermissions();
+          return true;
+        } catch (err) {
+          console.error("Permission error:", err);
+          setShowPermissionAlert(true);
+          return false;
+        }
+      }
+      return true;
+    };
+
+  // ✅ Screenshot handler
   const handleScreenshot = async () => {
     if (!quoteRef.current) return;
+
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) return;
+
     try {
       const canvas = await html2canvas(quoteRef.current, { scale: 2 });
       const dataUrl = canvas.toDataURL("image/png");
       const base64 = dataUrl.split(",")[1];
-
       const fileName = `quote_${quote?.quote_id}_screenshot.png`;
 
       const savedFile = await Filesystem.writeFile({
@@ -105,20 +128,22 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         recursive: true,
       });
 
-      setToastMessage("Screenshot saved successfully!");
-      console.log("Screenshot saved at:", savedFile.uri);
+      setToastMessage("✅ Screenshot saved successfully!");
+      console.log("📸 Screenshot saved at:", savedFile.uri);
 
-      // Optionally open
+      // Optionally open the image
       await Browser.open({ url: savedFile.uri });
     } catch (err) {
       console.error("❌ Failed to take screenshot:", err);
-      setToastMessage("Failed to take screenshot. See console.");
+      setToastMessage("Failed to take screenshot. See console for details.");
     }
   };
 
+  // ✅ PDF Generator
   const handleGeneratePDF = async () => {
     if (!quote) return;
     setPdfLoading(true);
+
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/generate_quote_pdf`, {
         method: "POST",
@@ -154,18 +179,17 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         recursive: true,
       });
 
-      console.log("PDF saved at:", savedFile.uri);
-
-      // Open PDF safely
+      console.log("📄 PDF saved at:", savedFile.uri);
       await Browser.open({ url: savedFile.uri });
     } catch (err) {
-      console.error("❌ Failed to generate PDF:", err);
-      setToastMessage("Failed to generate PDF. See console.");
+      console.error("❌ PDF Generation Error:", err);
+      setToastMessage("PDF generation failed.");
     } finally {
       setPdfLoading(false);
     }
   };
 
+  // ✅ Render states
   if (loading)
     return (
       <IonCard>
@@ -202,6 +226,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
       </IonCard>
     );
 
+  // ✅ Main content
   return (
     <>
       <IonCard ref={quoteRef}>
@@ -244,7 +269,8 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
               <ul>
                 {quote.addons.map((a, idx) => (
                   <li key={idx}>
-                    {a.name} – {a.is_flat ? `R${a.flat_rate}` : `R${a.per_sqm_rate}/sqm`}
+                    {a.name} –{" "}
+                    {a.is_flat ? `R${a.flat_rate}` : `R${a.per_sqm_rate}/sqm`}
                   </li>
                 ))}
               </ul>
@@ -267,7 +293,12 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           <IonButton expand="block" color="primary" onClick={handleScreenshot}>
             Take Screenshot
           </IonButton>
-          <IonButton expand="block" color="secondary" onClick={handleGeneratePDF} disabled={pdfLoading}>
+          <IonButton
+            expand="block"
+            color="secondary"
+            onClick={handleGeneratePDF}
+            disabled={pdfLoading}
+          >
             {pdfLoading ? "Generating PDF..." : "Download PDF"}
           </IonButton>
         </IonCardContent>
@@ -279,6 +310,14 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         duration={3000}
         onDidDismiss={() => setToastMessage(null)}
         color="success"
+      />
+
+      <IonAlert
+        isOpen={showPermissionAlert}
+        onDidDismiss={() => setShowPermissionAlert(false)}
+        header="Permission Required"
+        message="Storage permission is required to save screenshots or PDFs. Please enable it in Settings."
+        buttons={["OK"]}
       />
     </>
   );

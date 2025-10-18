@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Existing image paths -->
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+
+    <!-- ✅ Added for PDFs, screenshots, and general file saving -->
+    <external-path name="external_files" path="." />
+    <external-path name="documents" path="Documents/" />
+    <files-path name="internal_files" path="." />
 </paths>
