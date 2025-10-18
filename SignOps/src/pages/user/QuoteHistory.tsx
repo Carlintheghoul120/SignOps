@@ -46,7 +46,7 @@ export const QuoteHistory: React.FC = () => {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  // ✅ Fetch quotes with user + signage lookup
+  // Fetch quotes
   const fetchQuotes = async () => {
     try {
       const { data: quotesData, error: quotesError } = await supabase
@@ -79,23 +79,32 @@ export const QuoteHistory: React.FC = () => {
     fetchQuotes();
   }, []);
 
-  // ✅ Permission request
-    const requestPermissions = async () => {
-      // Use Capacitor platform detection instead of react-native.
-      // For automated Android runtime permission requests you would need
-      // a native Capacitor plugin; for now prompt user to enable permissions.
-      if (Capacitor.getPlatform() === "android") {
+  // Runtime storage permission for Android
+  const requestStoragePermission = async (): Promise<boolean> => {
+    if (Capacitor.getPlatform() === "android") {
+      try {
+        const status = await Filesystem.checkPermissions();
+        if (status.publicStorage === "granted") return true;
+
+        const request = await Filesystem.requestPermissions();
+        if (request.publicStorage === "granted") return true;
+
+        setShowPermissionAlert(true);
+        return false;
+      } catch (err) {
+        console.error("❌ Permission request failed:", err);
         setShowPermissionAlert(true);
         return false;
       }
-      return true;
-    };
+    }
+    return true; // iOS/Web does not need permission
+  };
 
-  // ✅ Generate PDF and save locally
+  // Generate PDF
   const handleGeneratePDF = async (quoteId: string) => {
     setPdfLoading(true);
     try {
-      const hasPermission = await requestPermissions();
+      const hasPermission = await requestStoragePermission();
       if (!hasPermission) return;
 
       const res = await fetch(`${supabaseUrl}/functions/v1/generate_quote_pdf`, {
@@ -135,7 +144,7 @@ export const QuoteHistory: React.FC = () => {
       console.log("📄 PDF saved at:", savedFile.uri);
       setToastMessage("✅ PDF saved successfully!");
 
-      // Optionally open the file
+      // Open PDF
       await Browser.open({ url: savedFile.uri });
     } catch (err) {
       console.error("❌ PDF generation failed:", err);
@@ -145,14 +154,12 @@ export const QuoteHistory: React.FC = () => {
     }
   };
 
-  // ✅ Filter quotes
   const filteredQuotes = quotes.filter((q) =>
     Object.values(q).some((val) =>
       val?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     )
   );
 
-  // ✅ Render
   return (
     <IonPage>
       <IonHeader>
