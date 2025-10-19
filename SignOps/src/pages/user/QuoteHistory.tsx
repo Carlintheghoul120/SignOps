@@ -20,10 +20,10 @@ import {
   IonMenuButton,
   IonAlert,
 } from "@ionic/react";
-import { supabase } from "../../supbaseclient";
+import { supabase } from "../../supbaseclient.tsx";
 import { Filesystem, Directory } from "@capacitor/filesystem";
+import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
-import { FileOpener } from "@awesome-cordova-plugins/file-opener/ngx";
 
 interface Quote {
   quote_id: string;
@@ -45,7 +45,6 @@ export const QuoteHistory: React.FC = () => {
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const fileOpener = new FileOpener();
 
   // ✅ Fetch quotes
   const fetchQuotes = async () => {
@@ -80,7 +79,7 @@ export const QuoteHistory: React.FC = () => {
     fetchQuotes();
   }, []);
 
-  // ✅ Runtime storage permission for Android
+  // ✅ Runtime storage permission check for Android
   const requestStoragePermission = async (): Promise<boolean> => {
     if (Capacitor.getPlatform() === "android") {
       try {
@@ -98,24 +97,10 @@ export const QuoteHistory: React.FC = () => {
         return false;
       }
     }
-    return true; // iOS/Web doesn’t need permission
+    return true;
   };
 
-  // ✅ Open file with native viewer or browser fallback
-  const openFile = async (uri: string, mimeType: string) => {
-    try {
-      if (Capacitor.getPlatform() === "android" || Capacitor.getPlatform() === "ios") {
-        await fileOpener.open(uri, mimeType);
-      } else {
-        window.open(uri, "_blank");
-      }
-    } catch (err) {
-      console.error("❌ File open error:", err);
-      setToastMessage("Failed to open file.");
-    }
-  };
-
-  // ✅ Generate PDF
+  // ✅ PDF generation + safe open
   const handleGeneratePDF = async (quoteId: string) => {
     setPdfLoading(true);
     try {
@@ -147,7 +132,7 @@ export const QuoteHistory: React.FC = () => {
         )
       );
 
-      const fileName = `quote_${quoteId}.pdf`;
+      const fileName = `quote_${quoteId}_${Date.now()}.pdf`;
 
       const savedFile = await Filesystem.writeFile({
         path: fileName,
@@ -158,7 +143,15 @@ export const QuoteHistory: React.FC = () => {
 
       console.log("📄 PDF saved at:", savedFile.uri);
       setToastMessage("✅ PDF saved successfully!");
-      await openFile(savedFile.uri, "application/pdf");
+
+      // ✅ Open safely depending on platform
+      if (Capacitor.getPlatform() === "android" || Capacitor.getPlatform() === "ios") {
+        await Browser.open({ url: savedFile.uri });
+      } else {
+        // fallback for web
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, "_blank");
+      }
     } catch (err) {
       console.error("❌ PDF generation failed:", err);
       setToastMessage("PDF generation failed.");
@@ -167,7 +160,6 @@ export const QuoteHistory: React.FC = () => {
     }
   };
 
-  // ✅ Filter quotes
   const filteredQuotes = quotes.filter((q) =>
     Object.values(q).some((val) =>
       val?.toString().toLowerCase().includes(searchTerm.toLowerCase())
@@ -198,7 +190,7 @@ export const QuoteHistory: React.FC = () => {
           isOpen={showPermissionAlert}
           onDidDismiss={() => setShowPermissionAlert(false)}
           header="Permission Required"
-          message="Storage permission is required to save or open PDFs. Please enable it in Settings."
+          message="Storage permission is required to save PDFs. Please enable it in Settings."
           buttons={["OK"]}
         />
 
