@@ -11,6 +11,9 @@
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <!-- ✅ Allow legacy external storage for Android 10 and below -->
     <application
@@ -20,7 +23,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        tools:targetApi="33">
 
         <activity
             android:name=".MainActivity"
@@ -35,7 +39,7 @@
             </intent-filter>
         </activity>
 
-        <!-- ✅ FileProvider for sharing PDFs or images -->
+        <!-- ✅ FileProvider for file sharing (PDFs, images, etc.) -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

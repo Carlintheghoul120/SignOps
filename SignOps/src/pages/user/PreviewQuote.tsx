@@ -13,8 +13,8 @@ import {
 import html2canvas from "html2canvas";
 import { supabase } from "../../supbaseclient.tsx";
 import { Filesystem, Directory } from "@capacitor/filesystem";
-import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
+import { FileOpener } from "@capacitor-community/file-opener";
 
 interface PreviewQuoteProps {
   quoteId: string;
@@ -64,10 +64,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
   const quoteRef = useRef<HTMLIonCardElement>(null);
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  // ✅ Fetch quote
+  // === Fetch quote from Supabase ===
   useEffect(() => {
     const fetchQuote = async () => {
       try {
@@ -87,31 +84,53 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         setLoading(false);
       }
     };
-
     fetchQuote();
   }, [quoteId]);
 
-  // ✅ Permission request
-    const requestPermissions = async () => {
-      // Use Capacitor platform detection and request filesystem permissions on Android
-      if (Capacitor.getPlatform() === "android") {
-        try {
-          // Request filesystem permissions via Capacitor Filesystem plugin (prompts on Android)
-          await Filesystem.requestPermissions();
-          return true;
-        } catch (err) {
-          console.error("Permission error:", err);
+  // === Request storage permissions (Android only) ===
+  const requestPermissions = async (): Promise<boolean> => {
+    if (Capacitor.getPlatform() === "android") {
+      try {
+        const perm = await Filesystem.checkPermissions();
+        if (perm.publicStorage === "granted") return true;
+
+        const req = await Filesystem.requestPermissions();
+        if (req.publicStorage !== "granted") {
           setShowPermissionAlert(true);
           return false;
         }
+        return true;
+      } catch (err) {
+        console.error("Permission error:", err);
+        setShowPermissionAlert(true);
+        return false;
       }
-      return true;
-    };
+    }
+    return true;
+  };
 
-  // ✅ Screenshot handler
+  // === Open file using Capacitor FileOpener ===
+  const openFile = async (uri: string, mimeType: string) => {
+    try {
+      if (Capacitor.getPlatform() === "web") {
+        window.open(uri, "_blank");
+        return;
+      }
+
+      await FileOpener.open({
+        filePath: uri,
+        contentType: mimeType,
+        openWithDefault: true,
+      });
+    } catch (err) {
+      console.error("❌ File open error:", err);
+      setToastMessage("Failed to open file.");
+    }
+  };
+
+  // === Take Screenshot ===
   const handleScreenshot = async () => {
     if (!quoteRef.current) return;
-
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
 
@@ -130,34 +149,35 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
 
       setToastMessage("✅ Screenshot saved successfully!");
       console.log("📸 Screenshot saved at:", savedFile.uri);
-
-      // Optionally open the image
-      await Browser.open({ url: savedFile.uri });
+      await openFile(savedFile.uri, "image/png");
     } catch (err) {
-      console.error("❌ Failed to take screenshot:", err);
-      setToastMessage("Failed to take screenshot. See console for details.");
+      console.error("❌ Screenshot error:", err);
+      setToastMessage("Failed to save screenshot.");
     }
   };
 
-  // ✅ PDF Generator
+  // === Generate PDF via Supabase Function ===
   const handleGeneratePDF = async () => {
     if (!quote) return;
     setPdfLoading(true);
 
     try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/generate_quote_pdf`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({ quoteId }),
-      });
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate_quote_pdf`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ quoteId }),
+        }
+      );
 
       if (!res.ok) {
-        const err = await res.json();
-        console.error("❌ Error generating PDF:", err);
-        setToastMessage("Failed to generate PDF. See console.");
+        const err = await res.text();
+        console.error("❌ PDF generation error:", err);
+        setToastMessage("Failed to generate PDF.");
         return;
       }
 
@@ -171,7 +191,6 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
       );
 
       const fileName = `quote_${quote.quote_id}.pdf`;
-
       const savedFile = await Filesystem.writeFile({
         path: fileName,
         data: base64,
@@ -180,7 +199,8 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
       });
 
       console.log("📄 PDF saved at:", savedFile.uri);
-      await Browser.open({ url: savedFile.uri });
+      await openFile(savedFile.uri, "application/pdf");
+      setToastMessage("✅ PDF generated & opened successfully!");
     } catch (err) {
       console.error("❌ PDF Generation Error:", err);
       setToastMessage("PDF generation failed.");
@@ -189,7 +209,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
     }
   };
 
-  // ✅ Render states
+  // === UI Rendering ===
   if (loading)
     return (
       <IonCard>
@@ -226,7 +246,6 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
       </IonCard>
     );
 
-  // ✅ Main content
   return (
     <>
       <IonCard ref={quoteRef}>
@@ -245,7 +264,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
             <strong>Address:</strong> {quote.client_address}
           </p>
           <p>
-            <strong>Signage:</strong> {quote.signage_name}
+            <strong>Signage:</strong> {quote.signage_name ?? "-"}
           </p>
           <p>
             <strong>Dimensions:</strong> {quote.width}m × {quote.height}m
@@ -269,8 +288,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
               <ul>
                 {quote.addons.map((a, idx) => (
                   <li key={idx}>
-                    {a.name} –{" "}
-                    {a.is_flat ? `R${a.flat_rate}` : `R${a.per_sqm_rate}/sqm`}
+                    {a.name} – {a.is_flat ? `R${a.flat_rate}` : `R${a.per_sqm_rate}/sqm`}
                   </li>
                 ))}
               </ul>
