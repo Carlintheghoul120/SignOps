@@ -22,7 +22,7 @@ import {
 } from "@ionic/react";
 import { supabase } from "../../supbaseclient.tsx";
 import { Filesystem, Directory } from "@capacitor/filesystem";
-import { Browser } from "@capacitor/browser";
+import { FileOpener } from "@capacitor-community/file-opener";
 import { Capacitor } from "@capacitor/core";
 
 interface Quote {
@@ -100,7 +100,7 @@ export const QuoteHistory: React.FC = () => {
     return true;
   };
 
-  // ✅ PDF generation + safe open
+  // ✅ PDF generation + open with FileOpener
   const handleGeneratePDF = async (quoteId: string) => {
     setPdfLoading(true);
     try {
@@ -144,11 +144,13 @@ export const QuoteHistory: React.FC = () => {
       console.log("📄 PDF saved at:", savedFile.uri);
       setToastMessage("✅ PDF saved successfully!");
 
-      // ✅ Open safely depending on platform
       if (Capacitor.getPlatform() === "android" || Capacitor.getPlatform() === "ios") {
-        await Browser.open({ url: savedFile.uri });
+        await FileOpener.open({
+          filePath: savedFile.uri,
+          contentType: "application/pdf",
+          openWithDefault: true,
+        });
       } else {
-        // fallback for web
         const blobUrl = URL.createObjectURL(blob);
         window.open(blobUrl, "_blank");
       }
