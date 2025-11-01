@@ -8,6 +8,7 @@ import {
 	IonImg,
 	IonInput,
 	IonMenuButton,
+	IonModal,
 	IonPage,
 	IonSpinner,
 	IonText,
@@ -15,82 +16,84 @@ import {
 	IonToast,
 	IonToolbar
 } from '@ionic/react';
-import {useHistory} from 'react-router-dom';
-import {supabase} from '../supbaseclient';
-import {useAuth} from '../AuthContext';
-import {useState,useEffect} from 'react';
+import { useHistory } from 'react-router-dom';
+import { supabase } from '../supbaseclient';
+import { useAuth } from '../AuthContext';
+import { useState, useEffect } from 'react';
 import LOGO from '../../resources/icon.png';
 
-const Login: React.FC=() => {
-	const history=useHistory();
-	const {user}=useAuth();
+const Login: React.FC = () => {
+	const history = useHistory();
+	const { user } = useAuth();
 
-	const [email,setEmail]=useState('');
-	const [phone,setPhone]=useState('');
-	const [password,setPassword]=useState('');
-	const [isLogin,setIsLogin]=useState(true);
-	const [usePhone,setUsePhone]=useState(false);
+	const [email, setEmail] = useState('');
+	const [phone, setPhone] = useState('');
+	const [password, setPassword] = useState('');
+	const [isLogin, setIsLogin] = useState(true);
+	const [usePhone, setUsePhone] = useState(false);
 
-	const [toastMessage,setToastMessage]=useState('');
-	const [errorMessage,setErrorMessage]=useState('');
-	const [showResend,setShowResend]=useState(false);
-	const [loadingResend,setLoadingResend]=useState(false);
+	const [toastMessage, setToastMessage] = useState('');
+	const [errorMessage, setErrorMessage] = useState('');
+	const [showResend, setShowResend] = useState(false);
+	const [loadingResend, setLoadingResend] = useState(false);
+
+	// 🔹 Forgot password modal state
+	const [showForgotModal, setShowForgotModal] = useState(false);
+	const [forgotEmail, setForgotEmail] = useState('');
+	const [loadingReset, setLoadingReset] = useState(false);
 
 	useEffect(() => {
-		if(user) {
+		if (user) {
 			history.replace('/quote/new');
 		}
-	},[user,history]);
+	}, [user, history]);
 
-	const handleAuth=async () => {
+	const handleAuth = async () => {
 		setErrorMessage('');
 		setToastMessage('');
 		setShowResend(false);
 
 		try {
-			if(isLogin) {
+			if (isLogin) {
 				// --- LOGIN ---
-				const credentials=usePhone
-					? {phone,password}
-					:{email,password};
+				const credentials = usePhone ? { phone, password } : { email, password };
 
-				const {error}=await supabase.auth.signInWithPassword(credentials);
+				const { error } = await supabase.auth.signInWithPassword(credentials);
 
-				if(error) {
+				if (error) {
 					setErrorMessage(error.message);
 					return;
 				}
 
-				const {data: userData}=await supabase.auth.getUser();
+				const { data: userData } = await supabase.auth.getUser();
 
-				if(!userData?.user) {
+				if (!userData?.user) {
 					setErrorMessage('Authentication failed. Please try again.');
 					return;
 				}
 
-				const confirmed=
-					userData.user.email_confirmed_at||userData.user.phone_confirmed_at;
+				const confirmed =
+					userData.user.email_confirmed_at || userData.user.phone_confirmed_at;
 
-				if(!confirmed) {
+				if (!confirmed) {
 					setErrorMessage('Please verify your account before logging in.');
 					setShowResend(!!userData.user.email);
 					await supabase.auth.signOut();
 					return;
 				}
 
-
 				// --- Insert into users table if not exists ---
-				const {data: existing}=await supabase
+				const { data: existing } = await supabase
 					.from('users')
 					.select('user_id')
-					.eq('user_id',userData.user.id)
+					.eq('user_id', userData.user.id)
 					.single();
 
-				if(!existing) {
+				if (!existing) {
 					await supabase.from('users').insert({
 						user_id: userData.user.id,
-						email: userData.user.email??null,
-						phone: userData.user.phone??null,
+						email: userData.user.email ?? null,
+						phone: userData.user.phone ?? null,
 						name: '',
 					});
 				}
@@ -98,44 +101,65 @@ const Login: React.FC=() => {
 				setToastMessage('Login successful!');
 				history.push('/quote/new');
 			} else {
-				const credentials=usePhone
-					? {phone,password}
-					:{email,password};
+				// --- SIGN UP ---
+				const credentials = usePhone ? { phone, password } : { email, password };
 
-				const {data,error}=await supabase.auth.signUp(credentials);
+				const { data, error } = await supabase.auth.signUp(credentials);
 
-				if(error) {
+				if (error) {
 					setErrorMessage(error.message);
 				} else {
 					setToastMessage(
 						usePhone
 							? 'Sign-up successful! Check your phone for a confirmation code.'
-							:'Sign-up successful! Check your email to verify your account.'
+							: 'Sign-up successful! Check your email to verify your account.'
 					);
 				}
 			}
-		} catch(e: any) {
-			setErrorMessage(e.message||'Something went wrong');
+		} catch (e: any) {
+			setErrorMessage(e.message || 'Something went wrong');
 		}
 	};
 
-	const handleResendVerification=async () => {
+	const handleResendVerification = async () => {
 		setLoadingResend(true);
 		setErrorMessage('');
 		setToastMessage('');
 
-		const {error}=await supabase.auth.resend({
+		const { error } = await supabase.auth.resend({
 			type: 'signup',
 			email,
 		});
 
-		if(error) {
+		if (error) {
 			setErrorMessage(error.message);
 		} else {
 			setToastMessage('Verification email resent!');
 		}
 
 		setLoadingResend(false);
+	};
+
+	// 🔹 Forgot Password
+	const handlePasswordReset = async () => {
+		setLoadingReset(true);
+		setErrorMessage('');
+		setToastMessage('');
+
+		const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+			redirectTo: 'com.signops.app://auth/callback',
+		});
+
+		if (error) {
+			setErrorMessage(error.message);
+		} else {
+			setToastMessage(
+				'Password reset link sent! Check your email to continue.'
+			);
+			setShowForgotModal(false);
+		}
+
+		setLoadingReset(false);
 	};
 
 	return (
@@ -145,9 +169,10 @@ const Login: React.FC=() => {
 					<IonButtons slot="start">
 						<IonMenuButton />
 					</IonButtons>
-					<IonTitle>{isLogin? 'Login':'Sign Up'}</IonTitle>
+					<IonTitle>{isLogin ? 'Login' : 'Sign Up'}</IonTitle>
 				</IonToolbar>
 			</IonHeader>
+
 			<IonContent fullscreen className="ion-padding">
 				<div
 					style={{
@@ -161,20 +186,24 @@ const Login: React.FC=() => {
 					<IonImg
 						src={LOGO}
 						alt="App Logo"
-						style={{maxWidth: 120,marginBottom: 20}}
+						style={{ maxWidth: 120, marginBottom: 20 }}
 					/>
 
-					<IonCard style={{width: '100%',maxWidth: 400}}>
+					<IonCard style={{ width: '100%', maxWidth: 400 }}>
 						<IonCardContent>
-							<h2 style={{textAlign: 'center'}}>{isLogin? 'Login':'Sign Up'}</h2>
+							<h2 style={{ textAlign: 'center' }}>
+								{isLogin ? 'Login' : 'Sign Up'}
+							</h2>
 
-							{errorMessage&&(
+							{errorMessage && (
 								<IonText color="danger">
-									<p style={{marginTop: 10,textAlign: 'center'}}>{errorMessage}</p>
+									<p style={{ marginTop: 10, textAlign: 'center' }}>
+										{errorMessage}
+									</p>
 								</IonText>
 							)}
 
-							{usePhone? (
+							{usePhone ? (
 								<IonInput
 									label="Phone"
 									labelPlacement="floating"
@@ -182,9 +211,9 @@ const Login: React.FC=() => {
 									type="tel"
 									value={phone}
 									onIonChange={(e) => setPhone(e.detail.value!)}
-									style={{marginBottom: 16}}
+									style={{ marginBottom: 16 }}
 								/>
-							):(
+							) : (
 								<IonInput
 									label="Email"
 									labelPlacement="floating"
@@ -192,7 +221,7 @@ const Login: React.FC=() => {
 									type="email"
 									value={email}
 									onIonChange={(e) => setEmail(e.detail.value!)}
-									style={{marginBottom: 16}}
+									style={{ marginBottom: 16 }}
 								/>
 							)}
 
@@ -203,19 +232,30 @@ const Login: React.FC=() => {
 								type="password"
 								value={password}
 								onIonChange={(e) => setPassword(e.detail.value!)}
-								style={{marginBottom: 16}}
+								style={{ marginBottom: 16 }}
 							/>
 
 							<IonButton expand="block" onClick={handleAuth}>
-								{isLogin? 'Login':'Sign Up'}
+								{isLogin ? 'Login' : 'Sign Up'}
 							</IonButton>
+
+							{isLogin && (
+								<IonButton
+									fill="clear"
+									expand="block"
+									color="medium"
+									onClick={() => setShowForgotModal(true)}
+								>
+									Forgot Password?
+								</IonButton>
+							)}
 
 							<IonButton
 								fill="clear"
 								expand="block"
 								onClick={() => setIsLogin(!isLogin)}
 							>
-								{isLogin? 'Need an account?':'Already have an account?'}
+								{isLogin ? 'Need an account?' : 'Already have an account?'}
 							</IonButton>
 
 							<IonButton
@@ -223,10 +263,10 @@ const Login: React.FC=() => {
 								expand="block"
 								onClick={() => setUsePhone(!usePhone)}
 							>
-								{usePhone? 'Use email instead':'Use phone instead'}
+								{usePhone ? 'Use email instead' : 'Use phone instead'}
 							</IonButton>
 
-							{showResend&&!usePhone&&(
+							{showResend && !usePhone && (
 								<IonButton
 									fill="outline"
 									expand="block"
@@ -234,7 +274,11 @@ const Login: React.FC=() => {
 									onClick={handleResendVerification}
 									disabled={loadingResend}
 								>
-									{loadingResend? <IonSpinner name="dots" />:'Resend Verification Email'}
+									{loadingResend ? (
+										<IonSpinner name="dots" />
+									) : (
+										'Resend Verification Email'
+									)}
 								</IonButton>
 							)}
 						</IonCardContent>
@@ -244,10 +288,40 @@ const Login: React.FC=() => {
 				<IonToast
 					isOpen={!!toastMessage}
 					message={toastMessage}
-					duration={2000}
+					duration={2500}
 					color="success"
 					onDidDismiss={() => setToastMessage('')}
 				/>
+
+				{/* 🔹 Forgot Password Modal */}
+				<IonModal isOpen={showForgotModal} onDidDismiss={() => setShowForgotModal(false)}>
+					<IonHeader>
+						<IonToolbar>
+							<IonTitle>Reset Password</IonTitle>
+						</IonToolbar>
+					</IonHeader>
+					<IonContent className="ion-padding">
+						<IonInput
+							label="Email"
+							labelPlacement="floating"
+							fill="outline"
+							type="email"
+							value={forgotEmail}
+							onIonChange={(e) => setForgotEmail(e.detail.value!)}
+							style={{ marginBottom: 16 }}
+						/>
+						<IonButton
+							expand="block"
+							onClick={handlePasswordReset}
+							disabled={loadingReset}
+						>
+							{loadingReset ? <IonSpinner name="dots" /> : 'Send Reset Link'}
+						</IonButton>
+						<IonButton fill="clear" expand="block" onClick={() => setShowForgotModal(false)}>
+							Cancel
+						</IonButton>
+					</IonContent>
+				</IonModal>
 			</IonContent>
 		</IonPage>
 	);
