@@ -147,7 +147,7 @@ const Login: React.FC = () => {
 		setToastMessage('');
 
 		const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-			redirectTo: 'com.signops.app://auth/callback',
+			redirectTo: 'com.signops.app://reset-password',
 		});
 
 		if (error) {
