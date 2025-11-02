@@ -1,8 +1,5 @@
 import React, { useEffect } from 'react';
-import {
-  IonRouterOutlet,
-  IonSplitPane
-} from '@ionic/react';
+import { IonRouterOutlet, IonSplitPane } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { Redirect, Route, Switch, useHistory } from 'react-router-dom';
 import { App } from '@capacitor/app';
@@ -11,28 +8,27 @@ import { AuthProvider, useAuth } from './AuthContext.tsx';
 import { supabase } from './supbaseclient.tsx';
 import Menu from './components/Menu.tsx';
 
+// ---- Pages ----
 import Login from './pages/Login.tsx';
-import ManageSignage from './pages/admin/ManageSignage.tsx';
+import ResetPassword from './pages/ResetPassword.tsx';
+import AdminDashboard from './pages/admin/AdminDashboard.tsx';
 import UserQuoteBuilder from './pages/user/QuoteNew.tsx';
 import QuoteHistory from './pages/user/QuoteHistory.tsx';
-import AdminDashboard from './pages/admin/AdminDashboard.tsx';
+import UserTasks from './pages/user/UserTasks.tsx';
+import ManageSignage from './pages/admin/ManageSignage.tsx';
 import ManageMaterials from './pages/admin/ManageMaterials.tsx';
 import AdminAddons from './pages/admin/ManageAddOns.tsx';
 import AdminUsers from './pages/admin/ManageUsers.tsx';
 import TaskBoard from './pages/admin/TaskBoard.tsx';
 import AdminTaskTemplates from './pages/admin/AdminTaskTemplate.tsx';
-import UserTasks from './pages/user/UserTasks.tsx';
-import ResetPassword from './pages/ResetPassword.tsx'; // 👈 new page
 
-// --------------------------------------
-// ✅ PrivateRoute wrapper
-// --------------------------------------
+// ---------------------------
+// ✅ PrivateRoute (React Router v5 style)
+// ---------------------------
 const PrivateRoute = ({ component: Component, ...rest }: any) => {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return <div className="ion-padding">Loading...</div>;
-  }
+  if (loading) return <div className="ion-padding">Loading...</div>;
 
   return (
     <Route
@@ -44,49 +40,55 @@ const PrivateRoute = ({ component: Component, ...rest }: any) => {
   );
 };
 
-// --------------------------------------
-// ✅ Deep Link Handler (for Supabase reset links)
-// --------------------------------------
+// ---------------------------
+// ✅ Deep Link Handler (for Supabase mobile redirects)
+// ---------------------------
 const DeepLinkHandler: React.FC = () => {
   const history = useHistory();
 
   useEffect(() => {
-    let listener: any;
+    let listenerHandle: any;
 
     const setup = async () => {
-      const handle = await App.addListener('appUrlOpen', async (data) => {
+      listenerHandle = await App.addListener('appUrlOpen', async (data) => {
         const url = data?.url;
+        console.log('🔗 Deep link opened:', url);
 
-        // Example: com.signops.app://auth/callback#access_token=...
         if (url && url.includes('auth/callback')) {
           try {
-            // Let Supabase handle the token in the URL
-            const { data: { session }, error } =
-              await supabase.auth.exchangeCodeForSession(url);
+            // Exchange code for session (handles magic link sign-ins)
+            const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(url);
+
+            // Extract access_token manually (for password reset flow)
+            const tokenMatch = url.match(/access_token=([^&]+)/);
+            const accessToken = tokenMatch ? tokenMatch[1] : null;
 
             if (error) {
               console.error('Session exchange failed:', error);
               return;
             }
 
-            // Redirect user to reset-password if it's a reset flow
-            if (session) {
-              history.replace('/reset-password');
+            if (accessToken) {
+              // Redirect to reset-password if token found
+              console.log('🪄 Redirecting to reset-password with token');
+              history.replace(`/reset-password?access_token=${accessToken}`);
+            } else if (session) {
+              // Normal login success redirect
+              console.log('✅ Session restored, redirecting to dashboard');
+              history.replace('/');
             }
           } catch (err) {
             console.error('Deep link error:', err);
           }
         }
       });
-
-      listener = handle;
     };
 
     setup();
 
     return () => {
-      if (listener && typeof listener.remove === 'function') {
-        listener.remove();
+      if (listenerHandle && typeof listenerHandle.remove === 'function') {
+        listenerHandle.remove();
       }
     };
   }, [history]);
@@ -94,21 +96,21 @@ const DeepLinkHandler: React.FC = () => {
   return null;
 };
 
-// --------------------------------------
+// ---------------------------
 // ✅ Main App Router
-// --------------------------------------
+// ---------------------------
 const AppRouter: React.FC = () => (
   <IonReactRouter>
     <AuthProvider>
       <IonSplitPane when={false} contentId="main">
         <Menu />
         <IonRouterOutlet id="main">
-          <DeepLinkHandler /> {/* 👈 handles Supabase auth redirects */}
+          <DeepLinkHandler />
 
           <Switch>
             {/* Public routes */}
             <Route path="/login" component={Login} exact />
-            <Route path="/reset-password" component={ResetPassword} exact /> {/* 👈 new route */}
+            <Route path="/reset-password" component={ResetPassword} exact />
 
             {/* Protected routes */}
             <PrivateRoute path="/admin/dashboard" component={AdminDashboard} exact />

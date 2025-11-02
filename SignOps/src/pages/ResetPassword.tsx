@@ -1,63 +1,75 @@
+import React, { useState, useEffect } from 'react';
 import {
-  IonButton,
-  IonCard,
-  IonCardContent,
-  IonContent,
-  IonHeader,
-  IonInput,
   IonPage,
-  IonSpinner,
-  IonText,
-  IonTitle,
-  IonToast,
+  IonHeader,
   IonToolbar,
+  IonTitle,
+  IonContent,
+  IonInput,
+  IonButton,
+  IonText,
+  IonToast,
 } from '@ionic/react';
-import { useEffect, useState } from 'react';
+import { useLocation, useHistory } from 'react-router-dom';
 import { supabase } from '../supbaseclient.tsx';
-import { useHistory } from 'react-router-dom';
 
 const ResetPassword: React.FC = () => {
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [toastMessage, setToastMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-
+  const location = useLocation();
   const history = useHistory();
 
-  useEffect(() => {
-    // Supabase automatically sets the session from the link token
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session) {
-        setErrorMessage(
-          'No active reset session found. Please open the reset link again.'
-        );
-      }
-    };
-    checkSession();
-  }, []);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
-  const handleUpdatePassword = async () => {
+  // Extract access_token from URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const token = params.get('access_token');
+    if (token) {
+      setAccessToken(token);
+    } else {
+      setErrorMessage('Invalid or missing reset token.');
+    }
+  }, [location.search]);
+
+  const handleResetPassword = async () => {
+    setErrorMessage('');
+    setToastMessage('');
+
+    if (!password || !confirmPassword) {
+      setErrorMessage('Please enter both fields.');
+      return;
+    }
     if (password !== confirmPassword) {
       setErrorMessage('Passwords do not match.');
       return;
     }
-
-    setLoading(true);
-    setErrorMessage('');
-
-    const { data, error } = await supabase.auth.updateUser({ password });
-
-    if (error) {
-      setErrorMessage(error.message);
-    } else {
-      setToastMessage('Password updated successfully! Please log in again.');
-      // Give toast time to show before redirecting
-      setTimeout(() => history.replace('/login'), 2000);
+    if (!accessToken) {
+      setErrorMessage('Missing reset token.');
+      return;
     }
 
-    setLoading(false);
+    setLoading(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser(
+        { password }
+      );
+
+      if (error) {
+        setErrorMessage(error.message);
+      } else {
+        setToastMessage('Password reset successful! Redirecting to login...');
+        setTimeout(() => history.replace('/login'), 2000);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Something went wrong.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -67,49 +79,36 @@ const ResetPassword: React.FC = () => {
           <IonTitle>Reset Password</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="ion-padding">
-        <IonCard style={{ maxWidth: 400, margin: 'auto', marginTop: '15%' }}>
-          <IonCardContent>
-            {errorMessage && (
-              <IonText color="danger">
-                <p style={{ textAlign: 'center' }}>{errorMessage}</p>
-              </IonText>
-            )}
+      <IonContent fullscreen className="ion-padding">
+        {errorMessage && (
+          <IonText color="danger">
+            <p>{errorMessage}</p>
+          </IonText>
+        )}
 
-            <IonInput
-              label="New Password"
-              labelPlacement="floating"
-              fill="outline"
-              type="password"
-              value={password}
-              onIonChange={(e) => setPassword(e.detail.value!)}
-              style={{ marginBottom: 16 }}
-            />
+        <IonInput
+          type="password"
+          placeholder="New Password"
+          value={password}
+          onIonChange={(e) => setPassword(e.detail.value!)}
+          style={{ marginBottom: 16 }}
+        />
+        <IonInput
+          type="password"
+          placeholder="Confirm Password"
+          value={confirmPassword}
+          onIonChange={(e) => setConfirmPassword(e.detail.value!)}
+          style={{ marginBottom: 16 }}
+        />
 
-            <IonInput
-              label="Confirm Password"
-              labelPlacement="floating"
-              fill="outline"
-              type="password"
-              value={confirmPassword}
-              onIonChange={(e) => setConfirmPassword(e.detail.value!)}
-              style={{ marginBottom: 16 }}
-            />
-
-            <IonButton
-              expand="block"
-              onClick={handleUpdatePassword}
-              disabled={loading}
-            >
-              {loading ? <IonSpinner name="dots" /> : 'Update Password'}
-            </IonButton>
-          </IonCardContent>
-        </IonCard>
+        <IonButton expand="block" onClick={handleResetPassword} disabled={loading}>
+          {loading ? 'Resetting...' : 'Reset Password'}
+        </IonButton>
 
         <IonToast
           isOpen={!!toastMessage}
           message={toastMessage}
-          duration={2500}
+          duration={2000}
           color="success"
           onDidDismiss={() => setToastMessage('')}
         />
