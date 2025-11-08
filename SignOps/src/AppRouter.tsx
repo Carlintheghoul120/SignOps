@@ -46,10 +46,8 @@ const DeepLinkHandler: React.FC = () => {
   const history = useHistory();
 
   useEffect(() => {
-    let listenerHandle: any;
-
     const setupListener = async () => {
-      listenerHandle = await App.addListener('appUrlOpen', async (data) => {
+      const listener = await App.addListener('appUrlOpen', async (data) => {
         const url = data?.url;
         if (!url) return;
         console.log('[DeepLinkHandler] URL opened:', url);
@@ -59,16 +57,11 @@ const DeepLinkHandler: React.FC = () => {
           const token = parsed.searchParams.get('access_token') || parsed.searchParams.get('token');
           const type = parsed.searchParams.get('type');
 
-          // Supabase recovery link
+          // Supabase password recovery link
           if (type === 'recovery' && token) {
-            console.log('[DeepLinkHandler] Recovery link detected');
-            history.replace(`/reset-password?access_token=${token}`);
-            return;
-          }
-
-          // Custom in-app reset-password deep link
-          if (url.includes('reset-password')) {
-            console.log('[DeepLinkHandler] Custom deep link → /reset-password');
+            console.log('[DeepLinkHandler] Password recovery link detected');
+            // Store token temporarily for ResetPassword page
+            sessionStorage.setItem('recovery_token', token);
             history.replace('/reset-password');
             return;
           }
@@ -78,27 +71,27 @@ const DeepLinkHandler: React.FC = () => {
             const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(url);
             if (session) {
               console.log('[DeepLinkHandler] Session created, redirecting...');
-              history.replace('/quote/new'); // default protected page
+              history.replace('/quote/new');
             } else {
               console.error('[DeepLinkHandler] Session exchange failed', error);
               history.replace('/login');
             }
             return;
           }
+
+          // Default fallback
+          if (url.includes('reset-password')) {
+            console.log('[DeepLinkHandler] Custom deep link → reset-password');
+            history.replace('/reset-password');
+          }
         } catch (err) {
-          console.error('[DeepLinkHandler] Error processing deep link:', err);
+          console.error('[DeepLinkHandler] Error:', err);
           history.replace('/login');
         }
       });
     };
 
     setupListener();
-
-    return () => {
-      if (listenerHandle && typeof listenerHandle.remove === 'function') {
-        listenerHandle.remove();
-      }
-    };
   }, [history]);
 
   return null;
