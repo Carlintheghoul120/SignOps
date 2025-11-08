@@ -40,7 +40,7 @@ const PrivateRoute = ({ component: Component, ...rest }: any) => {
 };
 
 /* ---------------------------
-   Deep Link Handler for Supabase Recovery Links
+   Deep Link Handler
 --------------------------- */
 const DeepLinkHandler: React.FC = () => {
   const history = useHistory();
@@ -56,22 +56,26 @@ const DeepLinkHandler: React.FC = () => {
 
         try {
           const parsed = new URL(url);
-          const token = parsed.searchParams.get('token');
+          const token = parsed.searchParams.get('access_token') || parsed.searchParams.get('token');
           const type = parsed.searchParams.get('type');
 
-          // Password recovery flow
+          // Supabase recovery link
           if (type === 'recovery' && token) {
-            console.log('[DeepLinkHandler] Recovery link detected, redirecting...');
-            // Redirect to reset-password with token
+            console.log('[DeepLinkHandler] Recovery link detected');
             history.replace(`/reset-password?access_token=${token}`);
             return;
           }
 
-          // Normal login flow
-          if (url.includes('auth/callback')) {
-            const { data: { session }, error } =
-              await supabase.auth.exchangeCodeForSession(url);
+          // Custom in-app reset-password deep link
+          if (url.includes('reset-password')) {
+            console.log('[DeepLinkHandler] Custom deep link → /reset-password');
+            history.replace('/reset-password');
+            return;
+          }
 
+          // OAuth login callback
+          if (url.includes('auth/callback')) {
+            const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(url);
             if (session) {
               console.log('[DeepLinkHandler] Session created, redirecting...');
               history.replace('/quote/new'); // default protected page
@@ -81,13 +85,6 @@ const DeepLinkHandler: React.FC = () => {
             }
             return;
           }
-
-          // Fallback for any custom reset-password deep link
-          if (url.includes('reset-password')) {
-            console.log('[DeepLinkHandler] Custom deep link → /reset-password');
-            history.replace('/reset-password');
-          }
-
         } catch (err) {
           console.error('[DeepLinkHandler] Error processing deep link:', err);
           history.replace('/login');
