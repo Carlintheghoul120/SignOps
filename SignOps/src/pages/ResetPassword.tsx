@@ -1,26 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonInput, IonButton, IonText, IonToast } from '@ionic/react';
-import { useHistory, useLocation } from 'react-router-dom';
+import {
+  IonPage,
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonContent,
+  IonInput,
+  IonButton,
+  IonText,
+  IonToast,
+} from '@ionic/react';
+import { useHistory } from 'react-router-dom';
 import { supabase } from '../supbaseclient.tsx';
 
 const ResetPassword: React.FC = () => {
   const history = useHistory();
-  const location = useLocation();
-
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [canReset, setCanReset] = useState(false);
 
-  // Extract token from URL
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const token = params.get('access_token');
-    if (token) setAccessToken(token);
-    else setErrorMessage('Invalid or missing reset token.');
-  }, [location.search]);
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[AuthStateChange]', event, session);
+      if (event === 'PASSWORD_RECOVERY') {
+        // Supabase has created a temporary session for password recovery
+        setCanReset(true);
+      }
+    });
+
+    return () => {
+      listener?.subscription?.unsubscribe?.();
+    };
+  }, []);
 
   const handleResetPassword = async () => {
     setErrorMessage('');
@@ -34,18 +48,17 @@ const ResetPassword: React.FC = () => {
       setErrorMessage('Passwords do not match.');
       return;
     }
-    if (!accessToken) {
-      setErrorMessage('Missing reset token.');
+    if (!canReset) {
+      setErrorMessage('Auth session missing. Please open the reset link again.');
       return;
     }
 
     setLoading(true);
     try {
-      // Use the access token to update the user password
-      const { data, error } = await supabase.auth.updateUser({ password }, { accessToken });
-
-      if (error) setErrorMessage(error.message);
-      else {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) {
+        setErrorMessage(error.message);
+      } else {
         setToastMessage('Password reset successful! Redirecting to login...');
         setTimeout(() => history.replace('/login'), 2000);
       }
@@ -63,8 +76,13 @@ const ResetPassword: React.FC = () => {
           <IonTitle>Reset Password</IonTitle>
         </IonToolbar>
       </IonHeader>
+
       <IonContent className="ion-padding">
-        {errorMessage && <IonText color="danger"><p>{errorMessage}</p></IonText>}
+        {errorMessage && (
+          <IonText color="danger">
+            <p>{errorMessage}</p>
+          </IonText>
+        )}
 
         <IonInput
           type="password"
@@ -81,7 +99,11 @@ const ResetPassword: React.FC = () => {
           style={{ marginBottom: 16 }}
         />
 
-        <IonButton expand="block" onClick={handleResetPassword} disabled={loading}>
+        <IonButton
+          expand="block"
+          onClick={handleResetPassword}
+          disabled={loading || !canReset}
+        >
           {loading ? 'Resetting...' : 'Reset Password'}
         </IonButton>
 
