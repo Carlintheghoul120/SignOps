@@ -14,7 +14,7 @@ import {
   IonText,
   IonTitle,
   IonToast,
-  IonToolbar
+  IonToolbar,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { supabase } from '../supbaseclient';
@@ -37,7 +37,6 @@ const Login: React.FC = () => {
   const [showResend, setShowResend] = useState(false);
   const [loadingResend, setLoadingResend] = useState(false);
 
-  // Forgot password modal state
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [loadingReset, setLoadingReset] = useState(false);
@@ -83,7 +82,6 @@ const Login: React.FC = () => {
       } else {
         const credentials = usePhone ? { phone, password } : { email, password };
         const { error } = await supabase.auth.signUp(credentials);
-
         if (error) setErrorMessage(error.message);
         else setToastMessage('Sign-up successful! Check your email to verify.');
       }
@@ -94,14 +92,9 @@ const Login: React.FC = () => {
 
   const handleResendVerification = async () => {
     setLoadingResend(true);
-    setErrorMessage('');
-    setToastMessage('');
-
     const { error } = await supabase.auth.resend({ type: 'signup', email });
-
     if (error) setErrorMessage(error.message);
     else setToastMessage('Verification email resent!');
-
     setLoadingResend(false);
   };
 
@@ -113,14 +106,13 @@ const Login: React.FC = () => {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-        redirectTo: 'com.signops.app://reset-password',
+        redirectTo: 'com.signops.app://reset?type=recovery', // ✅ updated redirect
       });
 
       if (error) setErrorMessage(error.message);
       else {
-        setToastMessage('Opening reset password page...');
+        setToastMessage('Password reset link sent! Check your email.');
         setShowForgotModal(false);
-        history.push('/reset-password');
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Something went wrong.');
@@ -141,13 +133,12 @@ const Login: React.FC = () => {
       </IonHeader>
 
       <IonContent fullscreen className="ion-padding">
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'center' }}>
           <IonImg src={LOGO} alt="App Logo" style={{ maxWidth: 120, marginBottom: 20 }} />
 
           <IonCard style={{ width: '100%', maxWidth: 400 }}>
             <IonCardContent>
               <h2 style={{ textAlign: 'center' }}>{isLogin ? 'Login' : 'Sign Up'}</h2>
-
               {errorMessage && <IonText color="danger"><p style={{ textAlign: 'center' }}>{errorMessage}</p></IonText>}
 
               {usePhone ? (
@@ -195,7 +186,7 @@ const Login: React.FC = () => {
           <IonContent className="ion-padding">
             <IonInput type="email" placeholder="Email" value={forgotEmail} onIonChange={(e) => setForgotEmail(e.detail.value!)} style={{ marginBottom: 16 }} />
             <IonButton expand="block" onClick={handlePasswordReset} disabled={loadingReset}>
-              {loadingReset ? <IonSpinner name="dots" /> : 'Open Reset Password'}
+              {loadingReset ? <IonSpinner name="dots" /> : 'Send Reset Link'}
             </IonButton>
             <IonButton fill="clear" expand="block" onClick={() => setShowForgotModal(false)}>Cancel</IonButton>
           </IonContent>

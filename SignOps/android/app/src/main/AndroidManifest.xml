@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.signops.app">
 
-    <!-- ✅ Permissions for Internet and file/media access -->
+    <!-- ✅ Permissions for Internet and media access -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission
@@ -35,13 +35,13 @@
             android:exported="true"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode">
 
-            <!-- 🔹 Main app launcher -->
+            <!-- 🔹 App launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- 🔹 Supabase OAuth redirect handler -->
+            <!-- 🔹 Supabase OAuth / Magic Link / Login Callback -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -51,9 +51,19 @@
                     android:host="auth"
                     android:path="/callback" />
             </intent-filter>
+
+            <!-- 🔹 Supabase Password Reset Deep Link -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.signops.app"
+                    android:host="reset" />
+            </intent-filter>
         </activity>
 
-        <!-- ✅ FileProvider for PDF & file access -->
+        <!-- ✅ FileProvider for PDFs and file access -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -64,5 +74,4 @@
                 android:resource="@xml/file_paths" />
         </provider>
     </application>
-
 </manifest>

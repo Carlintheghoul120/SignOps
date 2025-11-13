@@ -2,104 +2,115 @@ import React, { useEffect } from 'react';
 import { IonRouterOutlet, IonSplitPane } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { Redirect, Route, Switch, useHistory } from 'react-router-dom';
-import { App } from '@capacitor/app';
+import { App as CapacitorApp } from '@capacitor/app';
+import { supabase } from './supbaseclient';
+import { AuthProvider, useAuth } from './AuthContext';
 
-import { AuthProvider, useAuth } from './AuthContext.tsx';
-import { supabase } from './supbaseclient.tsx';
-import Menu from './components/Menu.tsx';
+import Menu from './components/Menu';
+import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import UserQuoteBuilder from './pages/user/QuoteNew';
+import QuoteHistory from './pages/user/QuoteHistory';
+import UserTasks from './pages/user/UserTasks';
+import ManageSignage from './pages/admin/ManageSignage';
+import ManageMaterials from './pages/admin/ManageMaterials';
+import AdminAddons from './pages/admin/ManageAddOns';
+import AdminUsers from './pages/admin/ManageUsers';
+import TaskBoard from './pages/admin/TaskBoard';
+import AdminTaskTemplates from './pages/admin/AdminTaskTemplate';
 
-import Login from './pages/Login.tsx';
-import ResetPassword from './pages/ResetPassword.tsx';
-import AdminDashboard from './pages/admin/AdminDashboard.tsx';
-import UserQuoteBuilder from './pages/user/QuoteNew.tsx';
-import QuoteHistory from './pages/user/QuoteHistory.tsx';
-import UserTasks from './pages/user/UserTasks.tsx';
-import ManageSignage from './pages/admin/ManageSignage.tsx';
-import ManageMaterials from './pages/admin/ManageMaterials.tsx';
-import AdminAddons from './pages/admin/ManageAddOns.tsx';
-import AdminUsers from './pages/admin/ManageUsers.tsx';
-import TaskBoard from './pages/admin/TaskBoard.tsx';
-import AdminTaskTemplates from './pages/admin/AdminTaskTemplate.tsx';
-
-/* ---------------------------
-   Private Route (Ionic + React Router v5)
---------------------------- */
 const PrivateRoute = ({ component: Component, ...rest }: any) => {
   const { user, loading } = useAuth();
-
   if (loading) return <div className="ion-padding">Loading...</div>;
-
   return (
-    <Route
-      {...rest}
-      render={(props) =>
-        user ? <Component {...props} /> : <Redirect to="/login" />
-      }
-    />
+    <Route {...rest} render={(props) => (user ? <Component {...props} /> : <Redirect to="/login" />)} />
   );
 };
 
-/* ---------------------------
-   Deep Link Handler
---------------------------- */
+/* -----------------------------------------------
+   ✅ Deep Link Handler
+------------------------------------------------ */
 const DeepLinkHandler: React.FC = () => {
   const history = useHistory();
 
-  useEffect(() => {
-    const setupListener = async () => {
-      const listener = await App.addListener('appUrlOpen', async (data) => {
-        const url = data?.url;
-        if (!url) return;
-        console.log('[DeepLinkHandler] URL opened:', url);
+  const handleUrl = async (url: string) => {
+    console.log('[DeepLinkHandler] Handling URL:', url);
+    try {
+      const parsed = new URL(url);
+      const host = parsed.host; // e.g. "auth" or "reset"
+      const type = parsed.searchParams.get('type');
+      const token = parsed.searchParams.get('token');
 
-        try {
-          const parsed = new URL(url);
-          const token = parsed.searchParams.get('access_token') || parsed.searchParams.get('token');
-          const type = parsed.searchParams.get('type');
+      // 🔹 CASE 1: Supabase Password Recovery
+      // Matches: com.signops.app://reset?type=recovery&token=...
+      if (host === 'reset' || type === 'recovery' || url.includes('type=recovery')) {
+        console.log('[DeepLinkHandler] Detected password recovery link');
+        sessionStorage.setItem('recovery_url', url);
+        history.replace('/reset-password');
+        return;
+      }
 
-          // Supabase password recovery link
-          if (type === 'recovery' && token) {
-            console.log('[DeepLinkHandler] Password recovery link detected');
-            // Store token temporarily for ResetPassword page
-            sessionStorage.setItem('recovery_token', token);
-            history.replace('/reset-password');
-            return;
-          }
-
-          // OAuth login callback
-          if (url.includes('auth/callback')) {
-            const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(url);
-            if (session) {
-              console.log('[DeepLinkHandler] Session created, redirecting...');
-              history.replace('/quote/new');
-            } else {
-              console.error('[DeepLinkHandler] Session exchange failed', error);
-              history.replace('/login');
-            }
-            return;
-          }
-
-          // Default fallback
-          if (url.includes('reset-password')) {
-            console.log('[DeepLinkHandler] Custom deep link → reset-password');
-            history.replace('/reset-password');
-          }
-        } catch (err) {
-          console.error('[DeepLinkHandler] Error:', err);
+      // 🔹 CASE 2: OAuth / Magic Link Login
+      // Matches: com.signops.app://auth/callback?code=...
+      if (host === 'auth' && url.includes('callback')) {
+        console.log('[DeepLinkHandler] Detected Supabase OAuth callback');
+        const { error } = await supabase.auth.exchangeCodeForSession(url);
+        if (error) {
+          console.error('[DeepLinkHandler] exchangeCodeForSession failed:', error.message);
           history.replace('/login');
+        } else {
+          console.log('[DeepLinkHandler] Session established → /quote/new');
+          history.replace('/quote/new');
+        }
+        return;
+      }
+
+      // 🔹 CASE 3: Fallback reset path (just in case)
+      if (url.includes('reset-password')) {
+        history.replace('/reset-password');
+        return;
+      }
+
+      console.warn('[DeepLinkHandler] No matching handler for:', url);
+      history.replace('/login');
+    } catch (err) {
+      console.error('[DeepLinkHandler] Error:', err);
+      history.replace('/login');
+    }
+  };
+
+  useEffect(() => {
+    const setup = async () => {
+      // 1️⃣ Handle app cold start
+      const launchUrl = await CapacitorApp.getLaunchUrl();
+      if (launchUrl?.url) {
+        console.log('[DeepLinkHandler] Cold start URL:', launchUrl.url);
+        await handleUrl(launchUrl.url);
+      }
+
+      // 2️⃣ Handle when app is already open
+      const listener = await CapacitorApp.addListener('appUrlOpen', async (event) => {
+        if (event?.url) {
+          console.log('[DeepLinkHandler] Warm open URL:', event.url);
+          await handleUrl(event.url);
         }
       });
+
+      return () => {
+        listener.remove();
+      };
     };
 
-    setupListener();
+    setup();
   }, [history]);
 
   return null;
 };
 
-/* ---------------------------
-   Main App Router
---------------------------- */
+/* -----------------------------------------------
+   ✅ App Router
+------------------------------------------------ */
 const AppRouter: React.FC = () => (
   <IonReactRouter>
     <AuthProvider>
@@ -107,13 +118,9 @@ const AppRouter: React.FC = () => (
         <Menu />
         <IonRouterOutlet id="main">
           <DeepLinkHandler />
-
           <Switch>
-            {/* 🔓 Public routes */}
             <Route path="/login" component={Login} exact />
             <Route path="/reset-password" component={ResetPassword} exact />
-
-            {/* 🔐 Protected routes */}
             <PrivateRoute path="/admin/dashboard" component={AdminDashboard} exact />
             <PrivateRoute path="/quote/new" component={UserQuoteBuilder} exact />
             <PrivateRoute path="/quote/history" component={QuoteHistory} exact />
@@ -124,8 +131,6 @@ const AppRouter: React.FC = () => (
             <PrivateRoute path="/admin/users" component={AdminUsers} exact />
             <PrivateRoute path="/admin/taskboard" component={TaskBoard} exact />
             <PrivateRoute path="/admin/tasktemplates" component={AdminTaskTemplates} exact />
-
-            {/* 🔁 Default redirect */}
             <Redirect exact from="/" to="/login" />
           </Switch>
         </IonRouterOutlet>
