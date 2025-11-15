@@ -20,86 +20,84 @@ import AdminUsers from './pages/admin/ManageUsers';
 import TaskBoard from './pages/admin/TaskBoard';
 import AdminTaskTemplates from './pages/admin/AdminTaskTemplate';
 
+/* -----------------------------------------------
+   🔐 Private Route
+------------------------------------------------ */
 const PrivateRoute = ({ component: Component, ...rest }: any) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="ion-padding">Loading...</div>;
   return (
-    <Route {...rest} render={(props) => (user ? <Component {...props} /> : <Redirect to="/login" />)} />
+    <Route
+      {...rest}
+      render={(props) => (user ? <Component {...props} /> : <Redirect to="/login" />)}
+    />
   );
 };
 
 /* -----------------------------------------------
-   ✅ Deep Link Handler
+   🌐 Deep Link Handler
 ------------------------------------------------ */
 const DeepLinkHandler: React.FC = () => {
   const history = useHistory();
 
   const handleUrl = async (url: string) => {
-    console.log('[DeepLinkHandler] Handling URL:', url);
-    try {
-      const parsed = new URL(url);
-      const host = parsed.host; // e.g. "auth" or "reset"
-      const type = parsed.searchParams.get('type');
-      const token = parsed.searchParams.get('token');
+    if (!url) return;
 
-      // 🔹 CASE 1: Supabase Password Recovery
-      // Matches: com.signops.app://reset?type=recovery&token=...
-      if (host === 'reset' || type === 'recovery' || url.includes('type=recovery')) {
-        console.log('[DeepLinkHandler] Detected password recovery link');
-        sessionStorage.setItem('recovery_url', url);
+    try {
+      const cleanUrl = decodeURIComponent(url);
+      const parsed = new URL(cleanUrl);
+
+      // Merge search params and hash params
+      const params = new URLSearchParams(parsed.search);
+      if (parsed.hash) {
+        const hashParams = new URLSearchParams(parsed.hash.slice(1));
+        hashParams.forEach((value, key) => params.set(key, value));
+      }
+
+      const type = params.get('type');
+      const token = params.get('access_token') || params.get('token');
+
+      // Password recovery deep link
+      if (type === 'recovery' && token) {
+        console.log('[DeepLinkHandler] Password recovery detected', token);
+        sessionStorage.setItem('recovery_token', token);
         history.replace('/reset-password');
         return;
       }
 
-      // 🔹 CASE 2: OAuth / Magic Link Login
-      // Matches: com.signops.app://auth/callback?code=...
-      if (host === 'auth' && url.includes('callback')) {
-        console.log('[DeepLinkHandler] Detected Supabase OAuth callback');
-        const { error } = await supabase.auth.exchangeCodeForSession(url);
+      // OAuth / Magic Link login
+      if (cleanUrl.includes('auth/callback')) {
+        const { error } = await supabase.auth.exchangeCodeForSession(cleanUrl);
         if (error) {
           console.error('[DeepLinkHandler] exchangeCodeForSession failed:', error.message);
           history.replace('/login');
         } else {
-          console.log('[DeepLinkHandler] Session established → /quote/new');
           history.replace('/quote/new');
         }
         return;
       }
 
-      // 🔹 CASE 3: Fallback reset path (just in case)
-      if (url.includes('reset-password')) {
-        history.replace('/reset-password');
-        return;
-      }
-
-      console.warn('[DeepLinkHandler] No matching handler for:', url);
+      // Fallback
+      console.warn('[DeepLinkHandler] No handler for URL:', cleanUrl);
       history.replace('/login');
     } catch (err) {
-      console.error('[DeepLinkHandler] Error:', err);
+      console.error('[DeepLinkHandler] Error parsing deep link:', err);
       history.replace('/login');
     }
   };
 
   useEffect(() => {
     const setup = async () => {
-      // 1️⃣ Handle app cold start
+      // Cold start
       const launchUrl = await CapacitorApp.getLaunchUrl();
-      if (launchUrl?.url) {
-        console.log('[DeepLinkHandler] Cold start URL:', launchUrl.url);
-        await handleUrl(launchUrl.url);
-      }
+      if (launchUrl?.url) await handleUrl(launchUrl.url);
 
-      // 2️⃣ Handle when app is already open
-      const listener = await CapacitorApp.addListener('appUrlOpen', async (event) => {
-        if (event?.url) {
-          console.log('[DeepLinkHandler] Warm open URL:', event.url);
-          await handleUrl(event.url);
-        }
+      // Warm start
+      const listener = CapacitorApp.addListener('appUrlOpen', (event) => {
+        if (event?.url) handleUrl(event.url);
       });
 
-      return () => {
-        listener.remove();
-      };
+      return () => listener.remove();
     };
 
     setup();
@@ -109,28 +107,35 @@ const DeepLinkHandler: React.FC = () => {
 };
 
 /* -----------------------------------------------
-   ✅ App Router
+   ⚙️ App Router
 ------------------------------------------------ */
 const AppRouter: React.FC = () => (
   <IonReactRouter>
     <AuthProvider>
+      <DeepLinkHandler />
       <IonSplitPane when={false} contentId="main">
         <Menu />
         <IonRouterOutlet id="main">
-          <DeepLinkHandler />
           <Switch>
+            {/* Public */}
             <Route path="/login" component={Login} exact />
             <Route path="/reset-password" component={ResetPassword} exact />
+
+            {/* Admin */}
             <PrivateRoute path="/admin/dashboard" component={AdminDashboard} exact />
-            <PrivateRoute path="/quote/new" component={UserQuoteBuilder} exact />
-            <PrivateRoute path="/quote/history" component={QuoteHistory} exact />
-            <PrivateRoute path="/tasks/view" component={UserTasks} exact />
             <PrivateRoute path="/admin/signage" component={ManageSignage} exact />
             <PrivateRoute path="/admin/materials" component={ManageMaterials} exact />
             <PrivateRoute path="/admin/addons" component={AdminAddons} exact />
             <PrivateRoute path="/admin/users" component={AdminUsers} exact />
             <PrivateRoute path="/admin/taskboard" component={TaskBoard} exact />
             <PrivateRoute path="/admin/tasktemplates" component={AdminTaskTemplates} exact />
+
+            {/* User */}
+            <PrivateRoute path="/quote/new" component={UserQuoteBuilder} exact />
+            <PrivateRoute path="/quote/history" component={QuoteHistory} exact />
+            <PrivateRoute path="/tasks/view" component={UserTasks} exact />
+
+            {/* Default */}
             <Redirect exact from="/" to="/login" />
           </Switch>
         </IonRouterOutlet>
