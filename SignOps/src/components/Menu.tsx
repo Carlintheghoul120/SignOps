@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-window
 import React, { useEffect, useState } from 'react';
 import {
   IonContent,
@@ -10,8 +11,8 @@ import {
   IonMenu,
   IonMenuToggle,
 } from '@ionic/react';
-import { useLocation } from 'react-router-dom';
-import { supabase } from '../supbaseclient';
+import { useLocation, useHistory } from 'react-router-dom';
+import { supabase } from '../supbaseclient.tsx';
 
 import {
   constructOutline,
@@ -25,7 +26,6 @@ import {
   fileTrayFullSharp,
   closeOutline,
 } from 'ionicons/icons';
-import { useHistory } from 'react-router-dom';
 
 import './Menu.css';
 import LOGO from '../../resources/icon.png';
@@ -63,35 +63,67 @@ const appPages = [
 
 const Menu: React.FC = () => {
   const location = useLocation();
-  const [loading, setLoading] = useState(false);
+  const history = useHistory();
+
+  const [loggingOut, setLoggingOut] = useState(false);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-const history = useHistory();
+  const [adminCheckLoading, setAdminCheckLoading] = useState(true);
 
-useEffect(() => {
-  const unlisten = history.listen(() => {
-    const menu = document.querySelector('ion-menu');
-    if (menu && (menu as HTMLIonMenuElement).isOpen) {
-      (menu as HTMLIonMenuElement).close();
-    }
-  });
-  return () => unlisten();
-}, []);
+  // Close menu on navigation
+  useEffect(() => {
+    const unlisten = history.listen(() => {
+      try {
+        const menu = document.querySelector('ion-menu') as HTMLIonMenuElement | null;
+        if (menu && (menu as any).isOpen) {
+          (menu as any).close();
+        }
+      } catch (err) {
+        console.warn('[Menu] Error closing menu on route change:', err);
+      }
+    });
 
+    return () => {
+      unlisten();
+    };
+  }, [history]);
+
+  // Check admin status for current user
   useEffect(() => {
     const checkAdminStatus = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      setAdminCheckLoading(true);
+      try {
+        const { data, error: userError } = await supabase.auth.getUser();
 
-      const { data, error } = await supabase
-        .from('users')
-        .select('is_admin')
-        .eq('user_id', user.id)
-        .single();
+        if (userError) {
+          console.error('[Menu] Error getting user:', userError);
+          setIsAdmin(false);
+          return;
+        }
 
-      if (error) {
-        console.error('Error fetching user admin status:', error);
-      } else {
-        setIsAdmin(data?.is_admin ?? false);
+        const user = data?.user;
+        if (!user) {
+          // Not logged in
+          setIsAdmin(false);
+          return;
+        }
+
+        const { data: userRow, error } = await supabase
+          .from('users')
+          .select('is_admin')
+          .eq('user_id', user.id)
+          .single();
+
+        if (error) {
+          console.error('[Menu] Error fetching user admin status:', error);
+          setIsAdmin(false);
+        } else {
+          setIsAdmin(userRow?.is_admin ?? false);
+        }
+      } catch (err) {
+        console.error('[Menu] Unexpected error checking admin status:', err);
+        setIsAdmin(false);
+      } finally {
+        setAdminCheckLoading(false);
       }
     };
 
@@ -99,35 +131,62 @@ useEffect(() => {
   }, []);
 
   const handleLogout = async () => {
-    setLoading(true);
+    setLoggingOut(true);
     try {
       await supabase.auth.signOut();
-      localStorage.clear();
-      window.location.href = '/login';
-    } finally {
-      setLoading(false);
+      try {
+        localStorage.clear();
+      } catch (err) {
+        console.warn('[Menu] Error clearing localStorage:', err);
+      }
+
+      // Use full reload to reset app state (works in Capacitor + browser)
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    } catch (err) {
+      console.error('[Menu] Error during logout:', err);
+      setLoggingOut(false);
     }
   };
 
-   const closeMenu = () => {
-    const menu = document.querySelector('ion-menu');
-    if (menu) (menu as HTMLIonMenuElement).close();
+  const closeMenu = () => {
+    try {
+      const menu = document.querySelector('ion-menu') as HTMLIonMenuElement | null;
+      if (menu) {
+        (menu as any).close();
+      }
+    } catch (err) {
+      console.warn('[Menu] Error closing menu:', err);
+    }
   };
 
-  const filteredPages = appPages.filter(page => !page.adminOnly || isAdmin);
+  // Only show admin-only pages once we *know* isAdmin.
+  // While adminCheckLoading && isAdmin === null, hide admin pages to be safe.
+  const filteredPages = appPages.filter((page) => {
+    if (!page.adminOnly) return true;
+    if (adminCheckLoading || isAdmin === null) return false;
+    return !!isAdmin;
+  });
 
   return (
     <IonMenu side="start" contentId="main" type="overlay">
-      <IonLoading isOpen={loading} message="Logging out..." spinner="crescent" />
-  <button className="menu-close-button" onClick={closeMenu}>
-    <IonIcon icon={closeOutline} />
-  </button>
+      <IonLoading
+        isOpen={loggingOut}
+        message="Logging out..."
+        spinner="crescent"
+      />
 
-	  <IonContent className="menu-content">
+      <button className="menu-close-button" onClick={closeMenu}>
+        <IonIcon icon={closeOutline} />
+      </button>
+
+      <IonContent className="menu-content">
         <IonList>
           <IonListHeader className="list-header">
             <img src={LOGO} alt="Logo" className="signup-logo" />
           </IonListHeader>
+
           {filteredPages.map((appPage, index) => (
             <IonMenuToggle key={index} autoHide={false}>
               <IonItem
@@ -137,12 +196,18 @@ useEffect(() => {
                 lines="none"
                 detail={false}
               >
-                <IonIcon aria-hidden="true" slot="start" ios={appPage.iosIcon} md={appPage.mdIcon} />
+                <IonIcon
+                  aria-hidden="true"
+                  slot="start"
+                  ios={appPage.iosIcon}
+                  md={appPage.mdIcon}
+                />
                 <IonLabel>{appPage.title}</IonLabel>
               </IonItem>
             </IonMenuToggle>
           ))}
         </IonList>
+
         <div className="logout-footer">
           <IonItem button onClick={handleLogout} lines="none">
             <IonIcon slot="start" icon={logOutOutline} />
