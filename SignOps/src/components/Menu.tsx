@@ -69,49 +69,44 @@ const Menu: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [adminCheckLoading, setAdminCheckLoading] = useState(true);
 
-  // Close menu on navigation
-  useEffect(() => {
-    const unlisten = history.listen(() => {
-      try {
-        const menu = document.querySelector('ion-menu') as HTMLIonMenuElement | null;
-        if (menu && (menu as any).isOpen) {
-          (menu as any).close();
-        }
-      } catch (err) {
-        console.warn('[Menu] Error closing menu on route change:', err);
-      }
-    });
-
-    return () => {
-      unlisten();
-    };
-  }, [history]);
-
-  // Check admin status for current user
+  // 🔹 Check admin status using stored identifier (email or phone)
   useEffect(() => {
     const checkAdminStatus = async () => {
       setAdminCheckLoading(true);
       try {
-        const { data, error: userError } = await supabase.auth.getUser();
+        let identifierType: string | null = null;
+        let identifierValue: string | null = null;
 
-        if (userError) {
-          console.error('[Menu] Error getting user:', userError);
+        try {
+          identifierType = localStorage.getItem('signops_identifier_type');
+          identifierValue = localStorage.getItem('signops_identifier_value');
+        } catch (err) {
+          console.warn('[Menu] Unable to access localStorage:', err);
+        }
+
+        if (!identifierType || !identifierValue) {
+          console.warn('[Menu] No stored identifier found, treating as non-admin');
           setIsAdmin(false);
           return;
         }
 
-        const user = data?.user;
-        if (!user) {
-          // Not logged in
-          setIsAdmin(false);
-          return;
+        let query = supabase.from('users').select('is_admin').single();
+
+        if (identifierType === 'email') {
+          query = supabase
+            .from('users')
+            .select('is_admin')
+            .eq('email', identifierValue.toLowerCase())
+            .single();
+        } else if (identifierType === 'phone') {
+          query = supabase
+            .from('users')
+            .select('is_admin')
+            .eq('phone', identifierValue)
+            .single();
         }
 
-        const { data: userRow, error } = await supabase
-          .from('users')
-          .select('is_admin')
-          .eq('user_id', user.id)
-          .single();
+        const { data: userRow, error } = await query;
 
         if (error) {
           console.error('[Menu] Error fetching user admin status:', error);
@@ -140,9 +135,13 @@ const Menu: React.FC = () => {
         console.warn('[Menu] Error clearing localStorage:', err);
       }
 
-      // Use full reload to reset app state (works in Capacitor + browser)
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+      try {
+        history.replace('/login');
+      } catch (err) {
+        console.warn('[Menu] history.replace failed, falling back to window.location', err);
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
       }
     } catch (err) {
       console.error('[Menu] Error during logout:', err);
@@ -151,18 +150,10 @@ const Menu: React.FC = () => {
   };
 
   const closeMenu = () => {
-    try {
-      const menu = document.querySelector('ion-menu') as HTMLIonMenuElement | null;
-      if (menu) {
-        (menu as any).close();
-      }
-    } catch (err) {
-      console.warn('[Menu] Error closing menu:', err);
-    }
+    // no DOM poking, just simple navigation or let IonMenuToggle handle it
+    history.goBack();
   };
 
-  // Only show admin-only pages once we *know* isAdmin.
-  // While adminCheckLoading && isAdmin === null, hide admin pages to be safe.
   const filteredPages = appPages.filter((page) => {
     if (!page.adminOnly) return true;
     if (adminCheckLoading || isAdmin === null) return false;
@@ -188,7 +179,7 @@ const Menu: React.FC = () => {
           </IonListHeader>
 
           {filteredPages.map((appPage, index) => (
-            <IonMenuToggle key={index} autoHide={false}>
+            <IonMenuToggle key={index} autoHide={true}>
               <IonItem
                 className={location.pathname === appPage.url ? 'selected' : ''}
                 routerLink={appPage.url}

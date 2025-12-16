@@ -11,48 +11,56 @@ import {
   IonAlert,
 } from "@ionic/react";
 import html2canvas from "html2canvas";
-import { supabase } from "../../supbaseclient.tsx";
+import { supabase } from "../../supbaseclient";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import { Capacitor } from "@capacitor/core";
 import { FileOpener } from "@capacitor-community/file-opener";
 
-interface PreviewQuoteProps {
-  quoteId: string;
-}
+/* ===========================
+   Helpers
+=========================== */
+const n = (v?: number | null) => Number.isFinite(v as number) ? (v as number) : 0;
+const money = (v?: number | null) => n(v).toFixed(2);
+
+/* ===========================
+   Types
+=========================== */
+interface PreviewQuoteProps { quoteId: string; }
 
 interface Addon {
   name: string;
-  flat_rate?: number;
-  per_sqm_rate?: number;
-  is_flat?: boolean;
+  flat_rate?: number | null;
+  per_sqm_rate?: number | null;
+  is_flat?: boolean | null;
 }
 
 interface MiscItem {
   name: string;
-  quantity: number;
-  unit_price: number;
-  total: number;
+  quantity?: number | null;
+  unit_price?: number | null;
 }
 
 interface Quote {
   quote_id: string;
-  company_name: string;
-  contact_name: string;
-  contact_email: string;
-  contact_phone: string;
-  client_address: string;
-  signage_name?: string;
-  width: number;
-  height: number;
-  area: number;
-  signage_cost: number;
-  material_cost: number;
-  addon_cost: number;
-  misc_cost: number;
-  petrol_fee?: number;
-  total_cost: number;
-  addons: Addon[];
-  misc_items: MiscItem[];
+  company_name?: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  client_address?: string | null;
+
+  signage_name?: string | null;
+  width?: number | null; // in meters
+  height?: number | null;
+
+  signage_cost?: number | null;
+  material_cost?: number | null;
+  addon_cost?: number | null;
+  misc_cost?: number | null;
+  petrol_fee?: number | null;
+  total_cost?: number | null;
+
+  addons?: Addon[] | null;
+  misc_items?: MiscItem[] | null;
 }
 
 const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
@@ -64,7 +72,12 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
   const quoteRef = useRef<HTMLIonCardElement>(null);
 
-  // === Fetch quote from Supabase ===
+  const computeTotal = (q: Quote) =>
+    n(q.signage_cost) + n(q.material_cost) + n(q.addon_cost) + n(q.misc_cost) + n(q.petrol_fee);
+
+  /* ===========================
+     Fetch Quote
+  =========================== */
   useEffect(() => {
     const fetchQuote = async () => {
       try {
@@ -78,7 +91,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         if (error || !data) throw error ?? new Error("Quote not found");
         setQuote(data as Quote);
       } catch (err: any) {
-        console.error("❌ Error fetching quote:", err);
+        console.error("Error fetching quote:", err);
         setError(err.message || "Failed to fetch quote");
       } finally {
         setLoading(false);
@@ -87,7 +100,9 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
     fetchQuote();
   }, [quoteId]);
 
-  // === Request storage permissions (Android only) ===
+  /* ===========================
+     Permissions
+  =========================== */
   const requestPermissions = async (): Promise<boolean> => {
     if (Capacitor.getPlatform() === "android") {
       try {
@@ -100,8 +115,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           return false;
         }
         return true;
-      } catch (err) {
-        console.error("Permission error:", err);
+      } catch {
         setShowPermissionAlert(true);
         return false;
       }
@@ -109,107 +123,86 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
     return true;
   };
 
-  // === Open file using Capacitor FileOpener ===
   const openFile = async (uri: string, mimeType: string) => {
     try {
       if (Capacitor.getPlatform() === "web") {
         window.open(uri, "_blank");
         return;
       }
-
-      await FileOpener.open({
-        filePath: uri,
-        contentType: mimeType,
-        openWithDefault: true,
-      });
-    } catch (err) {
-      console.error("❌ File open error:", err);
+      await FileOpener.open({ filePath: uri, contentType: mimeType, openWithDefault: true });
+    } catch {
       setToastMessage("Failed to open file.");
     }
   };
 
-  // === Take Screenshot ===
+  /* ===========================
+     Screenshot
+  =========================== */
   const handleScreenshot = async () => {
     if (!quoteRef.current) return;
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
+    if (!(await requestPermissions())) return;
 
     try {
       const canvas = await html2canvas(quoteRef.current, { scale: 2 });
-      const dataUrl = canvas.toDataURL("image/png");
-      const base64 = dataUrl.split(",")[1];
-      const fileName = `quote_${quote?.quote_id}_screenshot.png`;
+      const base64 = canvas.toDataURL("image/png").split(",")[1];
 
-      const savedFile = await Filesystem.writeFile({
+      const fileName = `quote_${quote?.quote_id}_screenshot.png`;
+      const saved = await Filesystem.writeFile({
         path: fileName,
         data: base64,
         directory: Directory.Documents,
         recursive: true,
       });
 
-      setToastMessage("✅ Screenshot saved successfully!");
-      console.log("📸 Screenshot saved at:", savedFile.uri);
-      await openFile(savedFile.uri, "image/png");
-    } catch (err) {
-      console.error("❌ Screenshot error:", err);
+      setToastMessage("Screenshot saved!");
+      await openFile(saved.uri, "image/png");
+    } catch {
       setToastMessage("Failed to save screenshot.");
     }
   };
 
-  // === Generate PDF via Supabase Function ===
+  /* ===========================
+     PDF
+  =========================== */
   const handleGeneratePDF = async () => {
     if (!quote) return;
     setPdfLoading(true);
 
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate_quote_pdf`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({ quoteId }),
-        }
-      );
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate_quote_pdf`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ quoteId }),
+      });
 
-      if (!res.ok) {
-        const err = await res.text();
-        console.error("❌ PDF generation error:", err);
-        setToastMessage("Failed to generate PDF.");
-        return;
-      }
+      if (!res.ok) throw new Error("PDF generation failed");
 
-      const blob = await res.blob();
-      const arrayBuffer = await blob.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(arrayBuffer).reduce(
-          (data, byte) => data + String.fromCharCode(byte),
-          ""
-        )
-      );
+      const buffer = await res.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
 
       const fileName = `quote_${quote.quote_id}.pdf`;
-      const savedFile = await Filesystem.writeFile({
+      const saved = await Filesystem.writeFile({
         path: fileName,
         data: base64,
         directory: Directory.Documents,
         recursive: true,
       });
 
-      console.log("📄 PDF saved at:", savedFile.uri);
-      await openFile(savedFile.uri, "application/pdf");
-      setToastMessage("✅ PDF generated & opened successfully!");
-    } catch (err) {
-      console.error("❌ PDF Generation Error:", err);
+      await openFile(saved.uri, "application/pdf");
+      setToastMessage("PDF generated!");
+    } catch {
       setToastMessage("PDF generation failed.");
     } finally {
       setPdfLoading(false);
     }
   };
 
-  // === UI Rendering ===
+  /* ===========================
+     UI
+  =========================== */
   if (loading)
     return (
       <IonCard>
@@ -217,7 +210,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
           <IonCardTitle>Loading Quote…</IonCardTitle>
         </IonCardHeader>
         <IonCardContent>
-          <IonSpinner name="crescent" />
+          <IonSpinner />
         </IonCardContent>
       </IonCard>
     );
@@ -235,16 +228,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
     );
 
   if (!quote)
-    return (
-      <IonCard>
-        <IonCardHeader>
-          <IonCardTitle>No Quote Found</IonCardTitle>
-        </IonCardHeader>
-        <IonCardContent>
-          <IonText>No data available for this quote.</IonText>
-        </IonCardContent>
-      </IonCard>
-    );
+    return <IonCard><IonCardContent>No quote found.</IonCardContent></IonCard>;
 
   return (
     <>
@@ -252,71 +236,56 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         <IonCardHeader>
           <IonCardTitle>Quote Preview</IonCardTitle>
         </IonCardHeader>
-        <IonCardContent>
-          <p>
-            <strong>Company:</strong> {quote.company_name}
-          </p>
-          <p>
-            <strong>Contact:</strong> {quote.contact_name} ({quote.contact_email},{" "}
-            {quote.contact_phone})
-          </p>
-          <p>
-            <strong>Address:</strong> {quote.client_address}
-          </p>
-          <p>
-            <strong>Signage:</strong> {quote.signage_name ?? "-"}
-          </p>
-          <p>
-            <strong>Dimensions:</strong> {quote.width}m × {quote.height}m
-          </p>
 
-          <h3>Breakdown:</h3>
+        <IonCardContent>
+          <p><strong>Company:</strong> {quote.company_name ?? "-"}</p>
+          <p>
+            <strong>Contact:</strong>{" "}
+            {quote.contact_name ?? "-"} ({quote.contact_email ?? "-"}, {quote.contact_phone ?? "-"})
+          </p>
+          <p><strong>Address:</strong> {quote.client_address ?? "-"}</p>
+
+          <p><strong>Signage:</strong> {quote.signage_name ?? "-"}</p>
+          <p><strong>Dimensions:</strong> {n(quote.width)*1000}mm × {n(quote.height)*1000}mm</p>
+
+          <h3>Breakdown</h3>
           <ul>
-            <li>Signage: R{quote.signage_cost}</li>
-            <li>Add-ons: R{quote.addon_cost}</li>
-            <li>Misc: R{quote.misc_cost}</li>
-            <li>Petrol Fee: R{quote.petrol_fee ?? 0}</li>
+            <li>Signage: R{money(quote.signage_cost)}</li>
+            <li>Add-ons: R{money(quote.addon_cost)}</li>
+            <li>Misc: R{money(quote.misc_cost)}</li>
+            <li>Petrol Fee: R{money(quote.petrol_fee)}</li>
           </ul>
 
-          <p>
-            <strong>Total Cost:</strong> R{quote.total_cost}
-          </p>
+          <p><strong>Total:</strong> R{money(quote.total_cost ?? computeTotal(quote))}</p>
 
-          {quote.addons?.length > 0 && (
+          {quote.addons?.length ? (
             <>
-              <h3>Add-ons:</h3>
+              <h3>Add-ons</h3>
               <ul>
-                {quote.addons.map((a, idx) => (
-                  <li key={idx}>
-                    {a.name} – {a.is_flat ? `R${a.flat_rate}` : `R${a.per_sqm_rate}/sqm`}
+                {quote.addons.map((a, i) => (
+                  <li key={i}>
+                    {a.name} – {a.is_flat ? `R${money(a.flat_rate)}` : `R${money(a.per_sqm_rate)}/sqm`}
                   </li>
                 ))}
               </ul>
             </>
-          )}
+          ) : null}
 
-          {quote.misc_items?.length > 0 && (
+          {quote.misc_items?.length ? (
             <>
-              <h3>Misc Items:</h3>
+              <h3>Misc Items</h3>
               <ul>
-                {quote.misc_items.map((m, idx) => (
-                  <li key={idx}>
-                    {m.name} (x{m.quantity}) – R{m.unit_price} each = R{m.total}
+                {quote.misc_items.map((m, i) => (
+                  <li key={i}>
+                    {m.name} × {n(m.quantity)} @ R{money(m.unit_price)} = R{money(n(m.quantity) * n(m.unit_price))}
                   </li>
                 ))}
               </ul>
             </>
-          )}
+          ) : null}
 
-          <IonButton expand="block" color="primary" onClick={handleScreenshot}>
-            Take Screenshot
-          </IonButton>
-          <IonButton
-            expand="block"
-            color="secondary"
-            onClick={handleGeneratePDF}
-            disabled={pdfLoading}
-          >
+          <IonButton expand="block" onClick={handleScreenshot}>Take Screenshot</IonButton>
+          <IonButton expand="block" color="secondary" onClick={handleGeneratePDF} disabled={pdfLoading}>
             {pdfLoading ? "Generating PDF..." : "Download PDF"}
           </IonButton>
         </IonCardContent>
@@ -324,7 +293,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
 
       <IonToast
         isOpen={!!toastMessage}
-        message={toastMessage || ""}
+        message={toastMessage ?? ""}
         duration={3000}
         onDidDismiss={() => setToastMessage(null)}
         color="success"
@@ -334,7 +303,7 @@ const PreviewQuote: React.FC<PreviewQuoteProps> = ({ quoteId }) => {
         isOpen={showPermissionAlert}
         onDidDismiss={() => setShowPermissionAlert(false)}
         header="Permission Required"
-        message="Storage permission is required to save screenshots or PDFs. Please enable it in Settings."
+        message="Storage permission is required to save screenshots or PDFs."
         buttons={["OK"]}
       />
     </>

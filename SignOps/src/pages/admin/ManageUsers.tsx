@@ -4,12 +4,12 @@ import {
 	IonLabel,IonToggle,IonButtons,IonButton,IonToast,IonFooter,IonText,
 	IonMenuButton
 } from '@ionic/react';
-import {supabase} from '../../supbaseclient';
+import {supabase} from '../../supbaseclient.tsx';
 
 interface User {
 	id: string;
 	email: string;
-	full_name?: string;
+	name?: string;
 	is_admin: boolean;
 }
 
@@ -70,7 +70,7 @@ const AdminUsers: React.FC=() => {
 					{users.map((user) => (
 						<IonItem key={user.id}>
 							<IonLabel className="ion-text-wrap">
-								<h2>{user.full_name||'No Name'}</h2>
+								<h2>{user.name||'No Name'}</h2>
 								<p>{user.email}</p>
 							</IonLabel>
 							<IonToggle
