@@ -308,369 +308,234 @@ export default function AdminSignage() {
 
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar color="primary">
-          <IonButtons slot="start">
-            <IonMenuButton />
-          </IonButtons>
-          <IonTitle className="ion-text-center">Signage Types</IonTitle>
-        </IonToolbar>
-      </IonHeader>
+  {/* HEADER */}
+  <IonHeader>
+    <IonToolbar color="primary">
+      <IonButtons slot="start">
+        <IonMenuButton />
+      </IonButtons>
 
-      <IonContent className="ion-padding">
-        <IonButton expand="block" onClick={() => setShowSignageModal(true)}>
-          + Add Signage
+      <IonTitle>Signage Types</IonTitle>
+
+      <IonButtons slot="end">
+        <IonButton onClick={() => setShowSignageModal(true)}>
+          + Add
         </IonButton>
+      </IonButtons>
+    </IonToolbar>
+  </IonHeader>
 
-        <IonList>
-          {signages.map((s) => (
-            <IonItem key={s.signage_id}>
-              <IonLabel>
-                <h2>{s.name}</h2>
-                <p>{s.description}</p>
-                <p>
-                  Base Price: R
-                  {(s.calculatedBasePrice ?? s.base_price_per_sqm).toFixed(2)}
-                </p>
-              </IonLabel>
-              <IonButton
-                size="small"
-                onClick={() => {
-                  setSelectedSignage(s);
-                  fetchLinkedMaterials(s.signage_id);
-                  setShowSignageModal(true);
+  <IonContent className="ion-padding">
+
+    {/* LIST */}
+    <IonList>
+      {signages.map((s) => (
+        <IonItem
+          key={s.signage_id}
+          style={{
+            marginBottom: "10px",
+            borderRadius: "10px",
+            border: "1px solid #dcdcdc",
+            padding: "10px",
+          }}
+        >
+          <IonLabel className="ion-text-wrap">
+            <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>
+              {s.name}
+            </h2>
+
+            <p style={{ fontSize: "0.9rem", marginTop: "2px" }}>
+              {(s.calculatedBasePrice ?? s.base_price_per_sqm).toFixed(2)} / sqm
+            </p>
+
+            <p style={{ fontSize: "0.85rem", opacity: 0.6 }}>
+              {s.description || "No description"}
+            </p>
+          </IonLabel>
+
+          <IonButton
+            fill="clear"
+            color="medium"
+            onClick={() => {
+              setSelectedSignage(s);
+              fetchLinkedMaterials(s.signage_id);
+              setShowSignageModal(true);
+            }}
+          >
+            Edit
+          </IonButton>
+
+          <IonButton
+            fill="clear"
+            color="danger"
+            onClick={() => handleDeleteSignage(s.signage_id)}
+          >
+            Delete
+          </IonButton>
+        </IonItem>
+      ))}
+
+      {signages.length === 0 && (
+        <IonItem>
+          <IonLabel>No signage types found.</IonLabel>
+        </IonItem>
+      )}
+    </IonList>
+  </IonContent>
+
+  {/* SIGNAGE MODAL */}
+  <IonModal isOpen={showSignageModal} onDidDismiss={() => setShowSignageModal(false)}>
+    <IonHeader>
+      <IonToolbar>
+        <IonTitle>
+          {selectedSignage.signage_id ? "Edit Signage" : "Add Signage"}
+        </IonTitle>
+      </IonToolbar>
+    </IonHeader>
+
+    <IonContent className="ion-padding">
+      <IonInput
+        label="Name"
+        fill="outline"
+        labelPlacement="floating"
+        style={{ marginBottom: "12px" }}
+        value={selectedSignage.name || ""}
+        onIonChange={(e) =>
+          setSelectedSignage({ ...selectedSignage, name: e.detail.value! })
+        }
+      />
+
+      <IonInput
+        label="Description"
+        fill="outline"
+        labelPlacement="floating"
+        style={{ marginBottom: "12px" }}
+        value={selectedSignage.description || ""}
+        onIonChange={(e) =>
+          setSelectedSignage({ ...selectedSignage, description: e.detail.value! })
+        }
+      />
+
+      {/* LINKED MATERIALS */}
+      {selectedSignage.signage_id && (
+        <>
+          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 8 }}>
+            Linked Materials
+          </h3>
+
+          <IonList>
+            {linkedMaterials.map((m) => (
+              <IonItem
+                key={m.material_id}
+                style={{
+                  marginBottom: "10px",
+                  borderRadius: "10px",
+                  border: "1px solid #e0e0e0",
+                  padding: "10px",
                 }}
               >
-                Edit
-              </IonButton>
-              <IonButton
-                color="danger"
-                size="small"
-                onClick={() => handleDeleteSignage(s.signage_id)}
-              >
-                Delete
-              </IonButton>
-            </IonItem>
-          ))}
-        </IonList>
+                <IonLabel className="ion-text-wrap">
+                  <h2 style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+                    {m.name}
+                  </h2>
 
-        {/* Signage Modal */}
-        <IonModal
-          isOpen={showSignageModal}
-          onDidDismiss={() => setShowSignageModal(false)}
-        >
-          <IonHeader>
-            <IonToolbar>
-              <IonTitle>
-                {selectedSignage.signage_id ? "Edit Signage" : "Add Signage"}
-              </IonTitle>
-            </IonToolbar>
-          </IonHeader>
-          <IonContent className="ion-padding">
-            <IonInput
-              placeholder="Name"
-              value={selectedSignage.name || ""}
-              onIonChange={(e) =>
-                setSelectedSignage({
-                  ...selectedSignage,
-                  name: e.detail.value!,
-                })
-              }
-            />
-            <IonInput
-              placeholder="Description"
-              value={selectedSignage.description || ""}
-              onIonChange={(e) =>
-                setSelectedSignage({
-                  ...selectedSignage,
-                  description: e.detail.value!,
-                })
-              }
-            />
+                  <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>
+                    R{m.price} • Qty {m.quantity_required}
+                  </p>
 
-            {/* Linked Materials */}
-            {selectedSignage.signage_id && (
-              <>
-                <h3
-                  style={{
-                    marginTop: 16,
-                    marginBottom: 8,
-                    fontSize: "1.05rem",
-                    fontWeight: 600,
-                  }}
-                >
-                  Linked Materials
-                </h3>
+                  <p style={{ fontSize: "0.8rem", opacity: 0.6 }}>
+                    Scale with area
+                  </p>
+                </IonLabel>
 
-                <IonList style={{ margin: 0 }}>
-                  {linkedMaterials.length > 0 ? (
-                    linkedMaterials.map((m) => (
-                      <IonItem
-                        key={m.material_id}
-                        lines="none"
-                        style={{
-                          borderRadius: 8,
-                          marginBottom: 12,
-                          boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-                          padding: "8px 12px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            width: "100%",
-                            gap: 6,
-                          }}
-                        >
-                          {/* Top row: name + price */}
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                            }}
-                          >
-                            <IonLabel>
-                              <h2
-                                style={{
-                                  fontSize: "0.95rem",
-                                  margin: 0,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {m.name}
-                              </h2>
-                              <p
-                                style={{
-                                  margin: "2px 0 0",
-                                  fontSize: "0.8rem",
-                                  opacity: 0.7,
-                                }}
-                              >
-                                R{m.price} • Qty: {m.quantity_required}
-                              </p>
-                            </IonLabel>
-                          </div>
-
-                          {/* Middle row: toggle */}
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              marginTop: 4,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: "0.8rem",
-                                opacity: 0.75,
-                              }}
-                            >
-                              Scale with area
-                            </span>
-                            <IonToggle
-                              checked={m.scale_with_area}
-                              onIonChange={(e) =>
-                                handleToggleScaleWithArea(
-                                  m.material_id,
-                                  e.detail.checked
-                                )
-                              }
-                            />
-                          </div>
-
-                          {/* Bottom row: actions */}
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "flex-end",
-                              gap: 8,
-                              marginTop: 6,
-                            }}
-                          >
-                            <IonButton
-                              color="medium"
-                              size="small"
-                              fill="outline"
-                              style={{ "--border-radius": "999px" } as any}
-                              onClick={() => {
-                                setEditMaterialId(m.material_id);
-                                setEditQty(m.quantity_required);
-                                setShowEditAlert(true);
-                              }}
-                            >
-                              Edit
-                            </IonButton>
-                            <IonButton
-                              color="danger"
-                              size="small"
-                              fill="solid"
-                              style={{ "--border-radius": "999px" } as any}
-                              onClick={() => handleRemoveMaterial(m.material_id)}
-                            >
-                              Remove
-                            </IonButton>
-                          </div>
-                        </div>
-                      </IonItem>
-                    ))
-                  ) : (
-                    <IonItem lines="none">
-                      <IonLabel>No materials linked yet.</IonLabel>
-                    </IonItem>
-                  )}
-                </IonList>
-
-                {/* Add Materials */}
-                <IonSelect
-                  value={selectedMaterial}
-                  placeholder="Select Material"
-                  onIonChange={(e) => setSelectedMaterial(e.detail.value)}
-                >
-                  {materials.map((m) => (
-                    <IonSelectOption key={m.material_id} value={m.material_id}>
-                      {m.name} (R{m.price})
-                    </IonSelectOption>
-                  ))}
-                </IonSelect>
-
-                <IonInput
-                  type="number"
-                  placeholder="Quantity"
-                  value={materialQty}
+                <IonToggle
+                  checked={m.scale_with_area}
                   onIonChange={(e) =>
-                    setMaterialQty(parseInt(e.detail.value!) || 1)
+                    handleToggleScaleWithArea(m.material_id, e.detail.checked)
                   }
                 />
 
                 <IonButton
-                  expand="block"
-                  onClick={handleAddMaterialToSignage}
+                  fill="clear"
+                  color="danger"
+                  onClick={() => handleRemoveMaterial(m.material_id)}
                 >
-                  Link Material
+                  Remove
                 </IonButton>
+              </IonItem>
+            ))}
 
-                <IonButton
-                  expand="block"
-                  color="secondary"
-                  onClick={() => setShowMaterialModal(true)}
-                >
-                  + Add New Material
-                </IonButton>
-              </>
+            {linkedMaterials.length === 0 && (
+              <IonItem>
+                <IonLabel>No materials linked.</IonLabel>
+              </IonItem>
             )}
+          </IonList>
 
-            <IonButton expand="full" onClick={handleSaveSignage}>
-              Save
-            </IonButton>
-            <IonButton
-              expand="full"
-              color="light"
-              onClick={() => setShowSignageModal(false)}
-            >
-              Cancel
-            </IonButton>
-          </IonContent>
-        </IonModal>
+          {/* ADD MATERIAL */}
+          <IonSelect
+            fill="outline"
+            placeholder="Select Material"
+            style={{ marginBottom: "12px" }}
+            value={selectedMaterial}
+            onIonChange={(e) => setSelectedMaterial(e.detail.value)}
+          >
+            {materials.map((m) => (
+              <IonSelectOption key={m.material_id} value={m.material_id}>
+                {m.name} (R{m.price})
+              </IonSelectOption>
+            ))}
+          </IonSelect>
 
-        {/* Edit Quantity Alert */}
-        <IonAlert
-          isOpen={showEditAlert}
-          onDidDismiss={() => setShowEditAlert(false)}
-          header="Edit Quantity"
-          inputs={[
-            {
-              name: "quantity",
-              type: "number",
-              value: editQty,
-              placeholder: "Enter new quantity",
-            },
-          ]}
-          buttons={[
-            {
-              text: "Cancel",
-              role: "cancel",
-              handler: () => {
-                setShowEditAlert(false);
-                setEditMaterialId(null);
-              },
-            },
-            {
-              text: "Save",
-              handler: (data) => {
-                const qty = parseInt(data.quantity) || 1;
-                setEditQty(qty);
-                handleUpdateMaterialQty();
-              },
-            },
-          ]}
-        />
+          <IonInput
+            label="Quantity"
+            type="number"
+            fill="outline"
+            labelPlacement="floating"
+            style={{ marginBottom: "12px" }}
+            value={materialQty}
+            onIonChange={(e) =>
+              setMaterialQty(parseInt(e.detail.value!) || 1)
+            }
+          />
 
-        {/* New Material Modal */}
-        <IonModal
-          isOpen={showMaterialModal}
-          onDidDismiss={() => setShowMaterialModal(false)}
-        >
-          <IonHeader>
-            <IonToolbar>
-              <IonTitle>Add Material</IonTitle>
-            </IonToolbar>
-          </IonHeader>
-          <IonContent className="ion-padding">
-            <IonInput
-              placeholder="Material Name"
-              value={newMaterial.name || ""}
-              onIonChange={(e) =>
-                setNewMaterial({ ...newMaterial, name: e.detail.value! })
-              }
-            />
-            <IonInput
-              placeholder="Price"
-              type="number"
-              value={newMaterial.price || ""}
-              onIonChange={(e) =>
-                setNewMaterial({
-                  ...newMaterial,
-                  price: parseFloat(e.detail.value!) || 0,
-                })
-              }
-            />
-            <IonSelect
-              value={newMaterial.pricing_type || "unit"}
-              placeholder="Select Pricing Type"
-              onIonChange={(e) =>
-                setNewMaterial({
-                  ...newMaterial,
-                  pricing_type: e.detail.value!,
-                })
-              }
-            >
-              <IonSelectOption value="unit">Per Unit</IonSelectOption>
-              <IonSelectOption value="sqm">Per SQM</IonSelectOption>
-            </IonSelect>
+          <IonButton expand="block" onClick={handleAddMaterialToSignage}>
+            Link Material
+          </IonButton>
 
-            <IonButton expand="full" onClick={handleAddMaterial}>
-              Save
-            </IonButton>
-            <IonButton
-              expand="full"
-              color="light"
-              onClick={() => setShowMaterialModal(false)}
-            >
-              Cancel
-            </IonButton>
-          </IonContent>
-        </IonModal>
+          <IonButton
+            expand="block"
+            color="light"
+            onClick={() => setShowMaterialModal(true)}
+            style={{ marginTop: "8px" }}
+          >
+            + Add New Material
+          </IonButton>
+        </>
+      )}
 
-        <IonToast
-          isOpen={!!toastMessage}
-          message={toastMessage}
-          duration={2000}
-          onDidDismiss={() => setToastMessage("")}
-        />
-      </IonContent>
-    </IonPage>
+      <IonButton expand="block" onClick={handleSaveSignage} style={{ marginTop: "12px" }}>
+        Save
+      </IonButton>
+
+      <IonButton
+        expand="block"
+        color="light"
+        onClick={() => setShowSignageModal(false)}
+        style={{ marginTop: "8px" }}
+      >
+        Cancel
+      </IonButton>
+    </IonContent>
+  </IonModal>
+
+  <IonToast
+    isOpen={!!toastMessage}
+    message={toastMessage}
+    duration={1500}
+    onDidDismiss={() => setToastMessage("")}
+  />
+</IonPage>
+
   );
 }

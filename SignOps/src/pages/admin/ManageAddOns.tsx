@@ -73,142 +73,183 @@ const AdminAddons: React.FC = () => {
 
   return (
     <IonPage>
-      <IonHeader>
-        <IonToolbar color="primary">
-					 <IonButtons slot="start">
-					<IonMenuButton />
-				  </IonButtons>
-          <IonTitle>Add-ons</IonTitle>
-          <IonButtons slot="end">
-            <IonButton onClick={() => setShowModal(true)}>Add Addon</IonButton>
-          </IonButtons>
-        </IonToolbar>
-      </IonHeader>
+  {/* HEADER */}
+  <IonHeader>
+    <IonToolbar color="primary">
+      <IonButtons slot="start">
+        <IonMenuButton />
+      </IonButtons>
 
-      <IonContent className="ion-padding">
-        {addons.length === 0 && (
-          <IonText color="medium">
-            <p className="ion-text-center">No add-ons found.</p>
-          </IonText>
-        )}
-        <IonList>
-          {addons.map((a) => (
-            <IonCard key={a.addon_id}>
-              <IonCardHeader>
-                <IonCardTitle>{a.name}</IonCardTitle>
-              </IonCardHeader>
-              <IonCardContent>
-                <IonText color="medium">
-                  <p>{a.description}</p>
-                  <p>
-                    {a.is_flat
-                      ? `Flat Rate: R${a.flat_rate?.toFixed(2)}`
-                      : `Per sqm: R${a.per_sqm_rate?.toFixed(2)}`}
-                  </p>
-                </IonText>
-                <div className="ion-margin-top ion-text-right">
-                  <IonButton
-                    size="small"
-                    fill="outline"
-                    color="medium"
-                    onClick={() => {
-                      setCurrentAddon(a);
-                      setShowModal(true);
-                    }}
-                  >
-                    <IonIcon icon={createOutline} slot="start" />
-                    Edit
-                  </IonButton>
-                  <IonButton
-                    size="small"
-                    fill="outline"
-                    color="danger"
-                    onClick={() => handleDelete(a.addon_id)}
-                    className="ion-margin-start"
-                  >
-                    <IonIcon icon={trashOutline} slot="start" />
-                    Delete
-                  </IonButton>
-                </div>
-              </IonCardContent>
-            </IonCard>
-          ))}
-        </IonList>
-      </IonContent>
+      <IonTitle>Add-ons</IonTitle>
 
-      {/* Modal for Create/Edit */}
-      <IonModal isOpen={showModal} onDidDismiss={() => setShowModal(false)}>
-        <IonHeader>
-          <IonToolbar>
-            <IonTitle>{currentAddon.addon_id ? 'Edit' : 'Add'} Addon</IonTitle>
-          </IonToolbar>
-        </IonHeader>
-        <IonContent className="ion-padding">
-          <IonItemDivider>Details</IonItemDivider>
-          <IonInput
-            label="Addon Name"
-            placeholder="Enter name"
-            value={currentAddon.name}
-            onIonChange={e => setCurrentAddon({ ...currentAddon, name: e.detail.value! })}
-          />
-          <IonInput
-            label="Description"
-            placeholder="Enter description"
-            value={currentAddon.description}
-            onIonChange={e => setCurrentAddon({ ...currentAddon, description: e.detail.value! })}
-          />
+      <IonButtons slot="end">
+        <IonButton onClick={() => setShowModal(true)}>
+          Add
+        </IonButton>
+      </IonButtons>
+    </IonToolbar>
+  </IonHeader>
 
-          <IonItem lines="none" className="ion-margin-top">
-            <IonLabel>Flat Rate?</IonLabel>
-            <IonToggle
-              checked={currentAddon.is_flat ?? true}
-              onIonChange={e => setCurrentAddon({ ...currentAddon, is_flat: e.detail.checked })}
-            />
-          </IonItem>
+  <IonContent className="ion-padding">
+    <IonList>
+      {addons.map((a) => (
+        <IonItem
+          key={a.addon_id}
+          style={{
+            marginBottom: "10px",
+            borderRadius: "10px",
+            border: "1px solid #dcdcdc",
+            padding: "10px",
+          }}
+        >
+          <IonLabel className="ion-text-wrap">
+            <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>
+              {a.name}
+            </h2>
 
-          {currentAddon.is_flat ? (
-            <IonInput
-              label="Flat Rate (R)"
-              type="number"
-              placeholder="e.g. 500"
-              value={currentAddon.flat_rate}
-              onIonChange={e =>
-                setCurrentAddon({ ...currentAddon, flat_rate: parseFloat(e.detail.value!) })
-              }
-            />
-          ) : (
-            <IonInput
-              label="Rate per sqm (R)"
-              type="number"
-              placeholder="e.g. 150"
-              value={currentAddon.per_sqm_rate}
-              onIonChange={e =>
-                setCurrentAddon({ ...currentAddon, per_sqm_rate: parseFloat(e.detail.value!) })
-              }
-            />
-          )}
+            {a.description && (
+              <p style={{ fontSize: "0.85rem", opacity: 0.7, marginTop: 2 }}>
+                {a.description}
+              </p>
+            )}
 
-          <IonButton expand="block" className="ion-margin-top" onClick={handleSave}>
-            Save
-          </IonButton>
+            <p style={{ fontSize: "0.9rem", marginTop: 4 }}>
+              {a.is_flat
+                ? `Flat Rate • R${a.flat_rate?.toFixed(2)}`
+                : `Per sqm • R${a.per_sqm_rate?.toFixed(2)}`}
+            </p>
+          </IonLabel>
+
           <IonButton
-            expand="block"
-            color="light"
-            className="ion-margin-top"
-            onClick={() => setShowModal(false)}
+            fill="clear"
+            color="medium"
+            onClick={() => {
+              setCurrentAddon(a);
+              setShowModal(true);
+            }}
           >
-            Cancel
+            <IonIcon icon={createOutline} />
           </IonButton>
-        </IonContent>
-      </IonModal>
 
-      <IonToast
-        isOpen={!!toastMessage}
-        onDidDismiss={() => setToastMessage('')}
-        message={toastMessage}
-        duration={1500}
+          <IonButton
+            fill="clear"
+            color="danger"
+            onClick={() => handleDelete(a.addon_id)}
+          >
+            <IonIcon icon={trashOutline} />
+          </IonButton>
+        </IonItem>
+      ))}
+
+      {addons.length === 0 && (
+        <IonItem>
+          <IonLabel>No add-ons found.</IonLabel>
+        </IonItem>
+      )}
+    </IonList>
+  </IonContent>
+
+  {/* MODAL */}
+  <IonModal isOpen={showModal} onDidDismiss={() => setShowModal(false)}>
+    <IonHeader>
+      <IonToolbar>
+        <IonTitle>
+          {currentAddon.addon_id ? "Edit Add-on" : "Add Add-on"}
+        </IonTitle>
+      </IonToolbar>
+    </IonHeader>
+
+    <IonContent className="ion-padding">
+      <IonInput
+        label="Add-on Name"
+        fill="outline"
+        labelPlacement="floating"
+        style={{ marginBottom: "12px" }}
+        value={currentAddon.name || ""}
+        onIonChange={(e) =>
+          setCurrentAddon({ ...currentAddon, name: e.detail.value! })
+        }
       />
-    </IonPage>
+
+      <IonInput
+        label="Description"
+        fill="outline"
+        labelPlacement="floating"
+        style={{ marginBottom: "12px" }}
+        value={currentAddon.description || ""}
+        onIonChange={(e) =>
+          setCurrentAddon({ ...currentAddon, description: e.detail.value! })
+        }
+      />
+
+      <IonItem style={{ marginBottom: "12px" }}>
+        <IonLabel>Flat Rate?</IonLabel>
+        <IonToggle
+          checked={currentAddon.is_flat ?? true}
+          onIonChange={(e) =>
+            setCurrentAddon({ ...currentAddon, is_flat: e.detail.checked })
+          }
+        />
+      </IonItem>
+
+      {currentAddon.is_flat ? (
+        <IonInput
+          label="Flat Rate (R)"
+          type="number"
+          fill="outline"
+          labelPlacement="floating"
+          style={{ marginBottom: "12px" }}
+          value={currentAddon.flat_rate ?? ""}
+          onIonChange={(e) =>
+            setCurrentAddon({
+              ...currentAddon,
+              flat_rate: parseFloat(e.detail.value!) || 0,
+            })
+          }
+        />
+      ) : (
+        <IonInput
+          label="Rate per sqm (R)"
+          type="number"
+          fill="outline"
+          labelPlacement="floating"
+          style={{ marginBottom: "12px" }}
+          value={currentAddon.per_sqm_rate ?? ""}
+          onIonChange={(e) =>
+            setCurrentAddon({
+              ...currentAddon,
+              per_sqm_rate: parseFloat(e.detail.value!) || 0,
+            })
+          }
+        />
+      )}
+
+      <IonButton expand="block" onClick={handleSave} style={{ marginTop: "12px" }}>
+        Save
+      </IonButton>
+
+      <IonButton
+        expand="block"
+        color="light"
+        onClick={() => {
+          setShowModal(false);
+          setCurrentAddon({});
+        }}
+        style={{ marginTop: "8px" }}
+      >
+        Cancel
+      </IonButton>
+    </IonContent>
+  </IonModal>
+
+  <IonToast
+    isOpen={!!toastMessage}
+    message={toastMessage}
+    duration={1500}
+    onDidDismiss={() => setToastMessage("")}
+  />
+</IonPage>
+
   );
 };
 
